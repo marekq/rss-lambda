@@ -87,7 +87,7 @@ def get_feed(url, source, s):
 		if int(timest) > int(maxts):
 			put_dynamo(s, timest, title, desc, cat, link, source)
 			msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="'+link+'">view post here</a><br><br>'+cat+'</body></html>')
-			#send_mail(msg, title)
+			send_mail(msg, title)
 			print 'sending message for article '+title
 		else:
 			print 'skip sending article '+title
