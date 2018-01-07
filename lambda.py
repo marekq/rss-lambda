@@ -2,6 +2,22 @@
 # @marekq
 # www.marek.rocks
 
+feeds	= {
+	'whats-new' 	: 'https://aws.amazon.com/new/feed/', 
+	'newsblog'		: 'http://feeds.feedburner.com/AmazonWebServicesBlog',
+	"devops"		: "http://blogs.aws.amazon.com/application-management/blog/feed/recentPosts.rss",
+	"big-data"		: "http://blogs.aws.amazon.com/bigdata/blog/feed/recentPosts.rss",
+	"security"		: "http://blogs.aws.amazon.com/security/blog/feed/recentPosts.rss",
+	"java"			: "http://java.awsblog.com/blog/feed/recentPosts.rss",
+	"mobile"		: "http://mobile.awsblog.com/blog/feed/recentPosts.rss",
+	"architecture"	: "http://www.awsarchitectureblog.com/atom.xml",
+	"compute"		: "https://aws.amazon.com/blogs/compute/feed/",
+	"database"		: "https://aws.amazon.com/blogs/database/feed/",
+	"management-tools" : "https://aws.amazon.com/blogs/mt/feed/",
+	"security-bulletins" : "https://aws.amazon.com/security/security-bulletins/feed/"
+}
+
+
 import boto3, feedparser, re, os, time
 from boto3.dynamodb.conditions import Key, Attr
 
@@ -39,12 +55,12 @@ def put_dynamo(s, timest, title, desc, cat, link, source):
 def send_mail(msg, subj):
     c	= boto3.client('ses')
     r	= c.send_email(
-        Source		= os.environ['fromemail'],
+        Source	    = os.environ['fromemail'],
         Destination = {'ToAddresses': [os.environ['toemail']]},
-        Message 	= {
+        Message     = {
             'Subject': {
                 'Data': subj
-            },
+                    },
             'Body': {
                 'Html': {
                     'Data': msg
@@ -56,7 +72,6 @@ def send_mail(msg, subj):
 def lambda_handler(event, context): 
 	s	= dynamo_sess()
 
-	feeds	= {'whats-new' : 'https://aws.amazon.com/new/feed/', 'newsblog' : 'http://feeds.feedburner.com/AmazonWebServicesBlog'}
 	for source, url in feeds.iteritems():
 		get_feed(url, source, s)
 		print 'getting '+source
