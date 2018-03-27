@@ -2,10 +2,10 @@
 # @marekq
 # www.marek.rocks
 
-import boto3, feedparser, re, os, time 
+import boto3, feedparser, re, os, time
+from botocore.vendored import requests
 from boto3.dynamodb.conditions import Key, Attr
 from bs4 import *
-from botocore.vendored import requests
 
 feeds	= {
 	'whats-new' 			: 'https://aws.amazon.com/new/feed/', 
@@ -22,12 +22,15 @@ feeds	= {
 	"security-bulletins"	: "https://aws.amazon.com/security/security-bulletins/feed/"
 }
 
+# get the RSS feed through feedparser
 def get_rss(url):
 	return feedparser.parse(url)
 
+# establish a session with DynamoDB
 def dynamo_sess():
 	return boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
 
+# get the timestamp of the latest blogpost stored in DynamoDB
 def ts_dynamo(s, source):
 	r		= s.query(KeyConditionExpression=Key('source').eq(source))
 	ts 		= ['0']
@@ -37,6 +40,7 @@ def ts_dynamo(s, source):
 
 	return max(ts)
 
+# write the blogpost record into DynamoDB
 def put_dynamo(s, timest, title, desc, link, source, auth, tags):
 	s.put_item(TableName = os.environ['dynamo_table'], 
 		Item = {
@@ -50,6 +54,7 @@ def put_dynamo(s, timest, title, desc, link, source, auth, tags):
 			'lower-tag'	: tags.lower()
 		})
 
+# send an email out whenever a new blogpost was found
 def send_mail(msg, subj):
     c	= boto3.client('ses')
     r	= c.send_email(
@@ -67,32 +72,43 @@ def send_mail(msg, subj):
         }
 )
 
+# retrieve the url of a blogpost
 def retrieve(url):
-	try:
-		r	= requests.get(url)
-		s	= BeautifulSoup(r.text)
-		t	= s.find("div",  attrs = {"id" : "aws-page-content"}).getText()[:4800]
-	
-		print('LEN '+str(len(t.encode('utf-8'))))
-		return t
-		
-	except Exception as e:
-		print('@@@', e)
-		return ''
+	r	= requests.get(url)
+	s	= BeautifulSoup(r.text)
 
+	try:					
+		t	= s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')[:4800]
+
+	except Exception as e:
+		print('@@@ url', url, e)
+		t	= '.'
+
+	return t
+
+# analyze the text of a blogpost using the AWS Comprehend service
 def comprehend(txt, title):
 	e 	= boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
 	c 	= []
+	f	= False
 
 	for x in e.detect_entities(Text = txt, LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE':
 			if x['Text'] not in c and x['Text'] != 'AWS' and x['Text'] != 'Amazon' and x['Text'] != 'aws':
 				c.append(x['Text'])
+				f	= True
 
-	tags 	= ', '.join(c)
-	print(title, '\n', tags, '\n')
+	if f:
+		tags 	= ', '.join(c)
+		print(title, '\n', tags, '\n')
+		
+	else:
+		tags	= '.'
+	
+	print('***', tags)	
 	return(tags)
 
+# main function to kick off collection of an rss feed
 def get_feed(url, source, s):
 	d		= get_rss(url)
 	
@@ -113,9 +129,10 @@ def get_feed(url, source, s):
 		auth		= x['author']
 
 		if int(timest) > int(maxts):
+			print('retrieving '+link)
+
 			txt 	= retrieve(link)
 			tags	= comprehend(txt, title)
-			
 			put_dynamo(s, timest, title, desc, link, source, auth, tags)
 			
 			msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>')
