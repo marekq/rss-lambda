@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Serverless Specification template describing your function.
+Resources:
+  rssdynamo:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: rss.lambda_handler
+      Runtime: python2.7
+      CodeUri: .
+      Description: ''
+      MemorySize: 512
+      Timeout: 60
+      Events:
+        Schedule1:
+          Type: Schedule
+          Properties:
+            Schedule: rate(10 minutes)
+      Environment:
+        Variables:
+          dynamo_region: eu-west-1
+          dynamo_table: rss-aws
+          fromemail: aws@marek.rocks
+          toemail: marek.kuczynski@gmail.com
+      Tracing: Active
+      ReservedConcurrentExecutions: 5

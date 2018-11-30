@@ -1,17 +1,31 @@
 #!/usr/bin/python
 # @marekq
 # www.marek.rocks
-
-import boto3, feedparser, re, os, Queue, threading, time
+import base64, boto3, re, os, Queue, sys, threading, time
 from botocore.vendored import requests
 from boto3.dynamodb.conditions import Key, Attr
+
+sys.path.insert(0, './libs')
 from bs4 import *
+import feedparser
 
-# establish a session with DynamoDB
-def dynamo_sess():
-	return boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
+# establish a session with DynamoDB and SES
+c		= boto3.client('ses')
+s		= boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
 
-s		= dynamo_sess()
+# get all the urls of links that are already stored in dynamodb
+def get_links():
+	a	= []
+	
+	c	= s.query(IndexName = 'allts', KeyConditionExpression = Key('allts').eq('y'))
+	
+	for x in c['Items']:
+		if x['link'] not in a:
+			a.append(x['link'])
+	
+	return a
+
+# create a queue
 q1     	= Queue.Queue()
 
 feeds	= {
@@ -56,6 +70,10 @@ def ts_dynamo(s, source):
 
 # write the blogpost record into DynamoDB
 def put_dynamo(s, timest, title, desc, link, source, auth, tags):
+	print('$$$', timest, title, desc, link, source, auth, tags)
+	if len(desc) == 0:
+		desc = '...'
+	
 	s.put_item(TableName = os.environ['dynamo_table'], 
 		Item = {
 			'timest'	: timest,
@@ -65,12 +83,12 @@ def put_dynamo(s, timest, title, desc, link, source, auth, tags):
 			'source'	: source,
 			'author'	: auth,
 			'tag'		: tags,
-			'lower-tag'	: tags.lower()
+			'lower-tag'	: tags.lower(),
+			'allts'		: 'y'
 		})
 
 # send an email out whenever a new blogpost was found
-def send_mail(msg, subj):
-    c	= boto3.client('ses')
+def send_mail(msg, subj, dest):
     r	= c.send_email(
         Source		= os.environ['fromemail'],
         Destination = {'ToAddresses': [os.environ['toemail']]},
@@ -95,7 +113,6 @@ def retrieve(url):
 		t	= s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')[:4800]
 
 	except Exception as e:
-		print('@@@ url', url, e)
 		t	= '.'
 
 	return t
@@ -117,10 +134,42 @@ def comprehend(txt, title):
 		print(title, '\n', tags, '\n')
 		
 	else:
-		tags	= '.'
+		tags	= 'aws'
 	
-	print('***', tags)	
 	return(tags)
+
+# get cloudwatch image to display on website
+def get_image():
+	client      = boto3.client('cloudwatch')
+	
+	mw 			= '''{
+	    "metrics": [
+	        [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "rss-aws", "Operation", "Query", { "period": 900 } ]
+	    ],
+	    "view": "timeSeries",
+	    "stacked": false,
+	    "region": "eu-west-1",
+	    "legend": {
+	        "position": "hidden"
+	    },
+	    "title": "Requst Latency",
+	    "period": 300,
+	    "width": 800,
+	    "height": 250,
+	    "start": "-PT12H",
+	    "end": "P0D"
+	}'''
+	
+	r	= client.get_metric_widget_image(MetricWidget = mw, OutputFormat = 'png')
+	x 	= base64.b64encode(r['MetricWidgetImage'])
+
+	g 	= open("/tmp/out.png", "w")
+	g.write(x.decode('base64'))
+	g.close()
+
+	s	= boto3.client('s3')
+	s.put_object(Bucket = 'marek.rocks', Body = open('/tmp/out.png'), Key = 'out.png')	#, ContentType = 'application/xml')
+	print('wrote image to marek.rocks/out.png')
 
 # main function to kick off collection of an rss feed
 def get_feed(f):
@@ -144,25 +193,29 @@ def get_feed(f):
 		desc 		= r.sub('', des).strip('&nbsp;')
 		auth		= x['author'].encode('utf-8')
 
-		if int(timest) > int(maxts):
+		if link.strip() not in links:
 			print('retrieving '+link)
-
+	
 			txt 	= retrieve(link)
 			tags	= comprehend(txt, title)
 			put_dynamo(s, timest, title, desc, link, source, auth, tags)
 			
-			msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>')
-			send_mail(msg, source.upper()+' - '+title)
+			msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="https://marek.rocks/'+link+'">view post here</a></body></html>')
+			send_mail(msg, source.upper()+' - '+title, os.environ['toemail'])
 			
 			print('sending message for article '+title)
 
 def lambda_handler(event, context): 
+	links	= get_links()
+	global links
+	
 	for source, url in feeds.iteritems():
 		q1.put([url, source])
-		#get_feed([url, source])
 
-	for x in range(5):
+	for x in range(20):
 		t = threading.Thread(target = worker)
 		t.daemon = True
 		t.start()
 	q1.join()
+	
+	get_image()
