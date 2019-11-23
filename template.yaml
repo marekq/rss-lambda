@@ -5,22 +5,54 @@ Resources:
   rssdynamo:
     Type: 'AWS::Serverless::Function'
     Properties:
-      Handler: rss.lambda_handler
-      Runtime: python2.7
-      CodeUri: .
+      Handler: lambda.handler
+      Runtime: python3.8
+      CodeUri: lambda/
       Description: ''
-      MemorySize: 512
-      Timeout: 60
+      Policies:
+        - ComprehendFullAccess
+        - DynamoDBCrudPolicy:
+            TableName: !Ref rssfeed
+
+      MemorySize: 1024
+      Timeout: 180
       Events:
         Schedule1:
           Type: Schedule
           Properties:
-            Schedule: rate(10 minutes)
+            Schedule: rate(60 minutes)
       Environment:
         Variables:
-          dynamo_region: eu-west-1
-          dynamo_table: rss-aws
+          dynamo_region: !Ref 'AWS::Region'
+          dynamo_table: !Ref rssfeed
           fromemail: aws@marek.rocks
           toemail: marek.kuczynski@gmail.com
       Tracing: Active
-      ReservedConcurrentExecutions: 5
+      ReservedConcurrentExecutions: 3
+
+  rssfeed:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      AttributeDefinitions:
+      - AttributeName: source
+        AttributeType: S
+      - AttributeName: timest
+        AttributeType: S
+      - AttributeName: allts
+        AttributeType: S
+      KeySchema:
+      - AttributeName: source
+        KeyType: HASH
+      - AttributeName: timest
+        KeyType: RANGE  
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+          Enabled: true
+          AttributeName: ttl
+      GlobalSecondaryIndexes:
+      - IndexName: allts
+        KeySchema:
+        - AttributeName: allts
+          KeyType: HASH
+        Projection:
+          ProjectionType: ALL

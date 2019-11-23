@@ -1,17 +1,19 @@
 #!/usr/bin/python
 # @marekq
 # www.marek.rocks
-import base64, boto3, re, os, Queue, sys, threading, time
-from botocore.vendored import requests
+
+import base64, boto3, re, os, queue, sys, threading, time
 from boto3.dynamodb.conditions import Key, Attr
 
 sys.path.insert(0, './libs')
 from bs4 import *
-import feedparser
+import feedparser, requests
 
 # establish a session with DynamoDB and SES
 c		= boto3.client('ses')
 s		= boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
+comp 	= boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
+
 
 # get all the urls of links that are already stored in dynamodb
 def get_links():
@@ -20,13 +22,22 @@ def get_links():
 	c	= s.query(IndexName = 'allts', KeyConditionExpression = Key('allts').eq('y'))
 	
 	for x in c['Items']:
+		try:
+			print('@@@', str(x))
+			print('%%%', str(x['link']))
+		except Exception as e:
+			print('$$$', str(e))
+
 		if x['link'] not in a:
-			a.append(x['link'])
-	
+			try:
+				a.append(str(x['link']))
+			except:
+				print('failed to add '+str(x))
+
 	return a
 
 # create a queue
-q1     	= Queue.Queue()
+q1     	= queue.Queue()
 
 feeds	= {
 	"public-sector"			: "https://aws.amazon.com/blogs/publicsector/feed/",
@@ -119,11 +130,10 @@ def retrieve(url):
 
 # analyze the text of a blogpost using the AWS Comprehend service
 def comprehend(txt, title):
-	e 	= boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
 	c 	= []
 	f	= False
 
-	for x in e.detect_entities(Text = txt, LanguageCode = 'en')['Entities']:
+	for x in comp.detect_entities(Text = txt, LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE':
 			if x['Text'] not in c and x['Text'] != 'AWS' and x['Text'] != 'Amazon' and x['Text'] != 'aws':
 				c.append(x['Text'])
@@ -175,47 +185,57 @@ def get_image():
 def get_feed(f):
 	url 	= f[0]
 	source	= f[1]
-	
+	stamps	= []
+
+
 	d		= get_rss(url)
 	maxts	= ts_dynamo(s, source)
 	t 		= s.get_item(Key = {'timest': maxts, 'source': source})
 
-	print('last blogpost in '+source+' has title '+str(t['Item']['title'])+'\n')
+	try:
+		print('last blogpost in '+source+' has title '+str(t['Item']['title'])+'\n')
+	except:
+		print('no blog records found for '+source)
 
 	for x in d['entries']:
 		timest 		= str(int(time.mktime(x['published_parsed'])))
+		c			= int(stamps.count(timest))
+
 		date		= str(x['published_parsed'])
 		title		= x['title'].encode('utf-8')
 		link		= x['link'].encode('utf-8')
 
 		des			= x['description'].encode('utf-8')
 		r 			= re.compile(r'<[^>]+>')
-		desc 		= r.sub('', des).strip('&nbsp;')
+		desc 		= r.sub('', str(des)).strip('&nbsp;')
 		auth		= x['author'].encode('utf-8')
 
+		if c != 1:
+			timest	= int(timest) + c
+
 		if link.strip() not in links:
-			print('retrieving '+link)
-	
+			print('retrieving '+str(link))
+			stamps.append(timest)
+
 			txt 	= retrieve(link)
 			tags	= comprehend(txt, title)
-			put_dynamo(s, timest, title, desc, link, source, auth, tags)
+			put_dynamo(s, str(timest), title, desc, link, source, auth, tags)
 			
-			msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="https://marek.rocks/'+link+'">view post here</a></body></html>')
-			send_mail(msg, source.upper()+' - '+title, os.environ['toemail'])
-			
-			print('sending message for article '+title)
+			#msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="https://marek.rocks/'+link+'">view post here</a></body></html>')
+			#send_mail(msg, source.upper()+' - '+title, os.environ['toemail'])
+			#print('sending message for article '+title)
 
-def lambda_handler(event, context): 
-	links	= get_links()
+def handler(event, context): 
 	global links
-	
-	for source, url in feeds.iteritems():
+	links	= get_links()
+
+	for source, url in feeds.items():
 		q1.put([url, source])
 
-	for x in range(20):
+	for x in range(50):
 		t = threading.Thread(target = worker)
 		t.daemon = True
 		t.start()
 	q1.join()
 	
-	get_image()
+	#get_image()
