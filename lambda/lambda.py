@@ -22,7 +22,6 @@ def get_links():
 	c	= ddb.scan()
 
 	for x in c['Items']:
-
 		if x['link'] not in a:
 			try:
 				a.append(str(x['link']))
@@ -33,7 +32,6 @@ def get_links():
 		c 	= ddb.scan(ExclusiveStartKey = c['LastEvaluatedKey'])
 
 		for x in c['Items']:
-
 			if x['link'] not in a:
 				try:
 					a.append(str(x['link']))
@@ -53,7 +51,6 @@ def worker():
 
 # get the RSS feed through feedparser
 def get_rss(url):
-	print('get_rss '+str(url))
 	x 	= feedparser.parse(url)
 	return x
 
