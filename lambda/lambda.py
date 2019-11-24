@@ -2,62 +2,48 @@
 # @marekq
 # www.marek.rocks
 
+# import dependancies 
 import base64, boto3, re, os, queue, sys, threading, time
 from boto3.dynamodb.conditions import Key, Attr
 
-sys.path.insert(0, './libs')
+# import packaged dependancies from 'libs/' folder
+sys.path.append('./libs')
 from bs4 import *
 import feedparser, requests
 
 # establish a session with DynamoDB and SES
-c		= boto3.client('ses')
-s		= boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
+ses		= boto3.client('ses')
+ddb		= boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
 comp 	= boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
-
 
 # get all the urls of links that are already stored in dynamodb
 def get_links():
 	a	= []
-	
-	c	= s.query(IndexName = 'allts', KeyConditionExpression = Key('allts').eq('y'))
-	
+	c	= ddb.scan()
+
 	for x in c['Items']:
-		try:
-			print('@@@', str(x))
-			print('%%%', str(x['link']))
-		except Exception as e:
-			print('$$$', str(e))
 
 		if x['link'] not in a:
 			try:
 				a.append(str(x['link']))
-			except:
-				print('failed to add '+str(x))
+			except Exception as e:
+				print(' --- failed to add '+str(x)+' '+str(e))
+
+	while 'LastEvaluatedKey' in c:
+		c 	= ddb.scan(ExclusiveStartKey = c['LastEvaluatedKey'])
+
+		for x in c['Items']:
+
+			if x['link'] not in a:
+				try:
+					a.append(str(x['link']))
+				except:
+					print('failed to add '+str(x))
 
 	return a
 
 # create a queue
 q1     	= queue.Queue()
-
-feeds	= {
-	"public-sector"			: "https://aws.amazon.com/blogs/publicsector/feed/",
-	"gamedev"				: "https://aws.amazon.com/blogs/gamedev/feed/",
-	"ml"					: "https://aws.amazon.com/blogs/machine-learning/feed/",
-	"cli"					: "https://aws.amazon.com/blogs/developer/category/programing-language/aws-cli/feed/",
-	"whats-new" 			: "https://aws.amazon.com/new/feed/", 
-	"newsblog"				: "https://aws.amazon.com/blogs/aws/feed/",
-	"serverless" 			: "https://aws.amazon.com/blogs/aws/category/serverless/feed/",
-	"devops"				: "https://aws.amazon.com/application-management/blog/feed/",
-	"big-data"				: "https://aws.amazon.com/blogs/big-data/feed/",
-	"security"				: "https://aws.amazon.com/blogs/security/feed/",
-	"java"					: "https://aws.amazon.com/blogs/developer/category/programing-language/java/feed/",
-	"mobile"				: "https://aws.amazon.com/blogs/mobile/feed/",
-	"architecture"			: "https://aws.amazon.com/blogs/architecture/feed/",
-	"compute"				: "https://aws.amazon.com/blogs/compute/feed/",
-	"database"				: "https://aws.amazon.com/blogs/database/feed/",
-	"management-tools"		: "https://aws.amazon.com/blogs/mt/feed/",
-	"security-bulletins"	: "https://aws.amazon.com/security/security-bulletins/feed/"
-}
 
 # worker for queue jobs
 def worker():
@@ -67,11 +53,13 @@ def worker():
 
 # get the RSS feed through feedparser
 def get_rss(url):
-	return feedparser.parse(url)
+	print('get_rss '+str(url))
+	x 	= feedparser.parse(url)
+	return x
 
 # get the timestamp of the latest blogpost stored in DynamoDB
-def ts_dynamo(s, source):
-	r		= s.query(KeyConditionExpression=Key('source').eq(source))
+def ts_dynamo(source):
+	r		= ddb.query(KeyConditionExpression=Key('source').eq(source))
 	ts 		= ['0']
 
 	for y in r['Items']:
@@ -80,12 +68,12 @@ def ts_dynamo(s, source):
 	return max(ts)
 
 # write the blogpost record into DynamoDB
-def put_dynamo(s, timest, title, desc, link, source, auth, tags):
+def put_dynamo(timest, title, desc, link, source, auth, tags):
 	print('$$$', timest, title, desc, link, source, auth, tags)
 	if len(desc) == 0:
 		desc = '...'
 	
-	s.put_item(TableName = os.environ['dynamo_table'], 
+	ddb.put_item(TableName = os.environ['dynamo_table'], 
 		Item = {
 			'timest'	: timest,
 			'title'		: title,
@@ -100,7 +88,7 @@ def put_dynamo(s, timest, title, desc, link, source, auth, tags):
 
 # send an email out whenever a new blogpost was found
 def send_mail(msg, subj, dest):
-    r	= c.send_email(
+    r	= ses.send_email(
         Source		= os.environ['fromemail'],
         Destination = {'ToAddresses': [os.environ['toemail']]},
         Message 	= {
@@ -128,6 +116,30 @@ def retrieve(url):
 
 	return t
 
+# read the url's from 'feeds.txt'
+def read_feed():
+	r 	= {}
+	f 	= 'feeds.txt'
+	c   = 0
+
+	# open the feeds file and read line by line
+	with open(f) as fp:
+		line = fp.readline()
+		while line:
+
+			# get the src and url value delimited by a ','
+			src, url 		= line.split(',')
+
+			# add src and url to dict
+			r[src.strip()] 	= url.strip()
+			line 			= fp.readline()
+
+			# add one to the count
+			c 				+= 1
+
+	# return the dict and count value
+	return r, c
+
 # analyze the text of a blogpost using the AWS Comprehend service
 def comprehend(txt, title):
 	c 	= []
@@ -146,40 +158,7 @@ def comprehend(txt, title):
 	else:
 		tags	= 'aws'
 	
-	return(tags)
-
-# get cloudwatch image to display on website
-def get_image():
-	client      = boto3.client('cloudwatch')
-	
-	mw 			= '''{
-	    "metrics": [
-	        [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "rss-aws", "Operation", "Query", { "period": 900 } ]
-	    ],
-	    "view": "timeSeries",
-	    "stacked": false,
-	    "region": "eu-west-1",
-	    "legend": {
-	        "position": "hidden"
-	    },
-	    "title": "Requst Latency",
-	    "period": 300,
-	    "width": 800,
-	    "height": 250,
-	    "start": "-PT12H",
-	    "end": "P0D"
-	}'''
-	
-	r	= client.get_metric_widget_image(MetricWidget = mw, OutputFormat = 'png')
-	x 	= base64.b64encode(r['MetricWidgetImage'])
-
-	g 	= open("/tmp/out.png", "w")
-	g.write(x.decode('base64'))
-	g.close()
-
-	s	= boto3.client('s3')
-	s.put_object(Bucket = 'marek.rocks', Body = open('/tmp/out.png'), Key = 'out.png')	#, ContentType = 'application/xml')
-	print('wrote image to marek.rocks/out.png')
+	return tags
 
 # main function to kick off collection of an rss feed
 def get_feed(f):
@@ -187,47 +166,56 @@ def get_feed(f):
 	source	= f[1]
 	stamps	= []
 
-
+	# retrieve the rss feed
 	d		= get_rss(url)
-	maxts	= ts_dynamo(s, source)
-	t 		= s.get_item(Key = {'timest': maxts, 'source': source})
 
+	maxts	= ts_dynamo(source)
+	t 		= ddb.get_item(Key = {'timest': maxts, 'source': source})
+
+	# check if previous blog post records were already present in DynamoDB
 	try:
-		print('last blogpost in '+source+' has title '+str(t['Item']['title'])+'\n')
+		print(' +++ last blogpost in '+source+' has title '+str(t['Item']['title'])+'\n')
 	except:
-		print('no blog records found for '+source)
+		print(' +++ no blog records found for '+url)
 
+	# get the articles meta data 
 	for x in d['entries']:
 		timest 		= str(int(time.mktime(x['published_parsed'])))
 		c			= int(stamps.count(timest))
 
 		date		= str(x['published_parsed'])
-		title		= x['title'].encode('utf-8')
-		link		= x['link'].encode('utf-8')
+		title		= str(x['title'])
+		link		= str(x['link'])
 
-		des			= x['description'].encode('utf-8')
+		des			= str(x['description'])
 		r 			= re.compile(r'<[^>]+>')
 		desc 		= r.sub('', str(des)).strip('&nbsp;')
-		auth		= x['author'].encode('utf-8')
+		auth		= str(x['author'])
 
 		if c != 1:
 			timest	= int(timest) + c
 
 		if link.strip() not in links:
-			print('retrieving '+str(link))
 			stamps.append(timest)
 
+			# retrieve the articles html page
 			txt 	= retrieve(link)
-			tags	= comprehend(txt, title)
-			put_dynamo(s, str(timest), title, desc, link, source, auth, tags)
-			
-			#msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="https://marek.rocks/'+link+'">view post here</a></body></html>')
-			#send_mail(msg, source.upper()+' - '+title, os.environ['toemail'])
-			#print('sending message for article '+title)
 
+			# use amazon comprehend to detect tags in the description text
+			tags	= comprehend(txt, title)
+			put_dynamo(str(timest), title, desc, link, source, auth, tags)
+			
+			# send out an email if the option is set to 'yes' in the sam template.
+			if os.environ['sendemails'].lower() == 'y':
+				msg		= str('<html><body><h2>'+title+'</h2><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>')
+				send_mail(msg, source.upper()+' - '+title, os.environ['toemail'])
+				print('sending message for article '+title)
+
+# the lambda handler
 def handler(event, context): 
 	global links
-	links	= get_links()
+	links		= get_links()
+	feeds, thr 	= read_feed()
 
 	for source, url in feeds.items():
 		q1.put([url, source])
@@ -237,5 +225,3 @@ def handler(event, context):
 		t.daemon = True
 		t.start()
 	q1.join()
-	
-	#get_image()

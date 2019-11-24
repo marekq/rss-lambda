@@ -8,14 +8,20 @@ Resources:
       Handler: lambda.handler
       Runtime: python3.8
       CodeUri: lambda/
-      Description: ''
+      Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'ses:SendEmail'
+              Resource: '*'
         - ComprehendFullAccess
+        - AmazonSESFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
-
-      MemorySize: 1024
-      Timeout: 180
+      MemorySize: 3008
+      Timeout: 60
       Events:
         Schedule1:
           Type: Schedule
@@ -27,9 +33,9 @@ Resources:
           dynamo_table: !Ref rssfeed
           fromemail: aws@marek.rocks
           toemail: marek.kuczynski@gmail.com
+          sendemails: 'n'
       Tracing: Active
       ReservedConcurrentExecutions: 3
-
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -55,4 +61,4 @@ Resources:
         - AttributeName: allts
           KeyType: HASH
         Projection:
-          ProjectionType: ALL
+          ProjectionType: KEYS_ONLY
