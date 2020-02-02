@@ -1,6 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: 'AWS::Serverless-2016-10-31'
 Description: An AWS Serverless Specification template describing your function.
+
+Parameters:
+  SourceEmail:
+    Type: String
+    Description: The sending email address for notification emails
+    Default: aws@marek.rocks
+
+  DestEmail:
+    Type: String
+    Description: The receiving email address for notification emails
+    Default: marek.kuczynski@gmail.com
+
+  SendEmails: 
+    Description: Set whether to send SES emails or not (default disabled). 
+    Default: 'n'
+    Type: String
+    AllowedValues: 
+      - 'y'
+      - 'n'
+
 Resources:
   rssdynamo:
     Type: 'AWS::Serverless::Function'
@@ -26,14 +46,14 @@ Resources:
         Schedule1:
           Type: Schedule
           Properties:
-            Schedule: rate(60 minutes)
+            Schedule: rate(10 minutes)
       Environment:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          fromemail: aws@marek.rocks
-          toemail: marek.kuczynski@gmail.com
-          sendemails: 'n'
+          fromemail: !Ref SourceEmail
+          toemail: !Ref DestEmail
+          sendemails: !Ref SendEmails
       Tracing: Active
       ReservedConcurrentExecutions: 3
   rssfeed:
