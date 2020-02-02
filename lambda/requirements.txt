@@ -1,3 +1,4 @@
+aws-xray-sdk
+BeautifulSoup4
 feedparser
 requests
-BeautifulSoup4

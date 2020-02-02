@@ -66,6 +66,8 @@ Resources:
         AttributeType: S
       - AttributeName: allts
         AttributeType: S
+      - AttributeName: guid
+        AttributeType: S
       KeySchema:
       - AttributeName: source
         KeyType: HASH
@@ -80,5 +82,7 @@ Resources:
         KeySchema:
         - AttributeName: allts
           KeyType: HASH
+        - AttributeName: guid
+          KeyType: RANGE
         Projection:
           ProjectionType: KEYS_ONLY
