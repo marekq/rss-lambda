@@ -61,7 +61,7 @@ Resources:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: rsslayer
-      Description: Dependencies for XRay, BeautifulSoup4, feedparser and requests
+      Description: python3 dependencies for XRay, BeautifulSoup4, feedparser and requests
       ContentUri: lambda-layer/
       CompatibleRuntimes:
         - python3.8

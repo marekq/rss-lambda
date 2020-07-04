@@ -80,8 +80,6 @@ def read_feed():
 			# add one to the count
 			c 				+= 1
 
-			print(src, url)
-
 	# return the dict and count value
 	return r, c
 
@@ -262,9 +260,9 @@ def get_feed(f):
 			mamsg		= '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+'</i><br><br>'+desc+'<br><br><a href='+link+'">view post here</a></body></html>'
 
 			# share the output message with another Lambda via Destinations			
-			resp['msg'] = mamsg
-			resp['title'] = mailt
-			resp['recpt'] = recpt
+			resp['guid']['msg'] = mamsg
+			resp['guid']['title'] = mailt
+			resp['guid']['recpt'] = recpt
 				
 		else:
 			#print('skipping '+title+' in '+source+' using url '+link)

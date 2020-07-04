@@ -5,7 +5,7 @@ cli, https://aws.amazon.com/blogs/developer/category/programing-language/aws-cli
 whats-new, https://aws.amazon.com/new/feed/ 
 newsblog, https://aws.amazon.com/blogs/aws/feed/
 serverless, https://aws.amazon.com/blogs/aws/category/serverless/feed/
-devops, https://aws.amazon.com/application-management/blog/feed/
+devops, https://aws.amazon.com/blogs/devops/feed/
 big-data, https://aws.amazon.com/blogs/big-data/feed/
 security, https://aws.amazon.com/blogs/security/feed/
 java, https://aws.amazon.com/blogs/developer/category/programing-language/java/feed/
