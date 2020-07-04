@@ -1,26 +1,24 @@
 #!/usr/bin/python
 # @marekq
 # www.marek.rocks
-import base64, botocore, boto3, json, re, os, queue, sys, threading, time
+import base64, botocore, boto3, json, re, os, requests, queue, sys, threading, time
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import date
 
-# import additional local libraries from './libs' folder.
-sys.path.append('./libs')
 from aws_xray_sdk.core import xray_recorder
 from aws_xray_sdk.core import patch_all
-from bs4 import *
-import feedparser, requests
 
-# patch libraries for xray tracing
+from bs4 import *
+import feedparser
+
 patch_all()
 
-
 # establish a session with SES, DynamoDB and Comprehend
-c		= boto3.client('ses')
 s		= boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 25)).Table(os.environ['dynamo_table'])
 com 	= boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
 
+# create a queue
+q1     	= queue.Queue()
 
 # get all the urls of links that are already stored in dynamodb
 @xray_recorder.capture("get_guids")
@@ -46,18 +44,19 @@ def get_guids():
 
 	print('len allts '+str(len(a)))
 	return a
-	
-
-# create a queue
-q1     	= queue.Queue()
 
 
 # worker for queue jobs
 def worker():
     while not q1.empty():
         get_feed(q1.get())
-        
         q1.task_done()
+
+
+# get the RSS feed through feedparser
+@xray_recorder.capture("get_rss")
+def get_rss(url):
+	return feedparser.parse(url)
 
 
 # read the url's from 'feeds.txt'
@@ -81,14 +80,10 @@ def read_feed():
 			# add one to the count
 			c 				+= 1
 
+			print(src, url)
+
 	# return the dict and count value
 	return r, c
-
-
-# get the RSS feed through feedparser
-@xray_recorder.capture("get_rss")
-def get_rss(url):
-	return feedparser.parse(url)
 
 
 # get the timestamp of the latest blogpost stored in DynamoDB
@@ -222,9 +217,6 @@ def get_feed(f):
 	# create a list for timestamps
 	stamps	= []
 	
-	# create a list for the emails to send
-	emails	= []
-	
 	# check all the retrieved articles
 	for x in d['entries']:
 		timest 		= int(time.mktime(x['published_parsed']))
@@ -269,11 +261,10 @@ def get_feed(f):
 			# generate the email message body
 			mamsg		= '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+'</i><br><br>'+desc+'<br><br><a href='+link+'">view post here</a></body></html>'
 
-			# optionally, share the output message with another Lambda via Destinations
-			jsmsg 		= '{"msg": "'+str(mamsg)+'", "title": "'+str(mailt)+'", "recpt": "'+str(recpt)+'"}'
-			
-			print(jsmsg)
-			resp.append(jsmsg)
+			# share the output message with another Lambda via Destinations			
+			resp['msg'] = mamsg
+			resp['title'] = mailt
+			resp['recpt'] = recpt
 				
 		else:
 			#print('skipping '+title+' in '+source+' using url '+link)
@@ -283,37 +274,27 @@ def get_feed(f):
 @xray_recorder.capture("handler")
 def handler(event, context): 
 	global resp
-	resp		= []
+	resp	= {}
 	
-	# retrieve the guid's of all posts
+	# get post guids
 	global guids
-	guids		= get_guids()
+	guids	= get_guids()
 
 	# get feed url's from local file
 	feeds, thr 	= read_feed()
 
-	# add an entry per url to the queue
+	# add task per url source
 	for source, url in feeds.items():
 		q1.put([url, source])
 
 	# start 20 threads
-	for x in range(20):
+	for x in range(thr):
 		t = threading.Thread(target = worker)
 		t.daemon = True
 		t.start()
 	q1.join()
+	
+	# return the json with any new retrieved articles
+	js = json.dumps(resp)
+	return json.loads(js)
 
-	# return json output for lambda destination that handles sending the email
-	out = '{'
-	for x in resp:
-		out += str(x)+','
-	
-	out += '}'
-	
-	print('RESP', out)
-	
-	# TODO - return Lambda Destination JSON
-	#get_image()
-	#return json.loads(out)
-
-	return ''

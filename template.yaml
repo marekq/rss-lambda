@@ -25,19 +25,12 @@ Resources:
   rssdynamo:
     Type: 'AWS::Serverless::Function'
     Properties:
-      Handler: lambda.handler
+      Handler: dynamo.handler
       Runtime: python3.8
-      CodeUri: lambda/
+      CodeUri: lambda-dynamo/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - 'ses:SendEmail'
-              Resource: '*'
         - ComprehendFullAccess
-        - AmazonSESFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
       MemorySize: 3008
@@ -56,6 +49,26 @@ Resources:
           sendemails: !Ref SendEmails
       Tracing: Active
       ReservedConcurrentExecutions: 3
+
+  rssemail:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda.handler
+      Runtime: python3.8
+      CodeUri: lambda-email/
+      Description: 'Send an email with the AWS blog summary'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'ses:SendEmail'
+              Resource: '*'
+      MemorySize: 512
+      Timeout: 10
+      Tracing: Active
+      ReservedConcurrentExecutions: 3
+
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
     Properties:

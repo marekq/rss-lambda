@@ -1,3 +1,4 @@
 packaged.yaml
 lambda/libs
 samconfig.toml
+.aws-sam/

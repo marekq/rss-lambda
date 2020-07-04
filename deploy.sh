@@ -4,15 +4,12 @@
 
 ############################################################
 
-# set variables
+# set cli color variables
 RED='\033[0;31m'
 NC='\033[0m'
-dirn='./lambda/libs'
 
-# rebuild the lambda package 
-rm -rf $dirn
-mkdir $dirn
-pip3 install -r ./lambda/requirements.txt -t ./lambda/libs
+# build the lambda package in a docker container
+sam build -u
 
 # validate the sam stack
 echo -e "\n${RED} * Running SAM validate locally to test function... ${NC}\n"
