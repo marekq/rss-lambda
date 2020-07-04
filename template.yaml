@@ -49,6 +49,26 @@ Resources:
           sendemails: !Ref SendEmails
       Tracing: Active
       ReservedConcurrentExecutions: 3
+      Layers: 
+        - !Ref lambdalayer
+      EventInvokeConfig:
+        DestinationConfig:
+          OnSuccess:
+            Type: Lambda
+            Destination: !GetAtt rssemail.Arn
+
+  lambdalayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: rsslayer
+      Description: Dependencies for XRay, BeautifulSoup4, feedparser and requests
+      ContentUri: lambda-layer/
+      CompatibleRuntimes:
+        - python3.8
+      LicenseInfo: ''
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.8
 
   rssemail:
     Type: 'AWS::Serverless::Function'
