@@ -260,10 +260,10 @@ def get_feed(f):
 			mamsg		= '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+'</i><br><br>'+desc+'<br><br><a href='+link+'">view post here</a></body></html>'
 
 			# share the output message with another Lambda via Destinations			
-			resp['guid']['msg'] = mamsg
-			resp['guid']['title'] = mailt
-			resp['guid']['recpt'] = recpt
-				
+			resp[guid] = {'msg' : mamsg}
+			resp[guid] = {'title' : mailt}
+			resp[guid] = {'recpt' : recpt}
+
 		else:
 			#print('skipping '+title+' in '+source+' using url '+link)
 			pass

@@ -22,6 +22,11 @@ Parameters:
       - 'n'
 
 Resources:
+  sqsqueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+
   rssdynamo:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -36,6 +41,11 @@ Resources:
       MemorySize: 3008
       Timeout: 60
       Events:
+        sqstrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt sqsqueue.Arn
+            BatchSize: 1
         Schedule1:
           Type: Schedule
           Properties:
@@ -66,7 +76,7 @@ Resources:
       CompatibleRuntimes:
         - python3.8
       LicenseInfo: ''
-      RetentionPolicy: Delete
+      RetentionPolicy: Retain
     Metadata:
       BuildMethod: python3.8
 
