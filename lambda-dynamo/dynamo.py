@@ -226,9 +226,9 @@ def get_feed(f):
 	
 			# retrieve blog date and description text
 			date = str(x['published_parsed'])
-			des	= str(x['description'])
 
 			# clean up blog post description text 
+			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
 			desc = r.sub('', str(des)).strip('&nbsp;')
 			
@@ -258,8 +258,8 @@ def get_feed(f):
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
-				
-				send_mail(mamsg, title, recpt, title, auth, desc, link)
+		
+				send_mail(desc, title, recpt, title, auth, desc, link)
 
 
 # lambda handler
