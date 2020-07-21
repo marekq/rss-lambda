@@ -35,6 +35,6 @@ sap, https://aws.amazon.com/blogs/awsforsap/feed/
 security, https://aws.amazon.com/blogs/security/feed/
 security-bulletins, https://aws.amazon.com/security/security-bulletins/feed/
 serverless, https://aws.amazon.com/blogs/aws/category/serverless/feed/
-storage, https://aws.amazon.com/blogs/storage/
+storage, https://aws.amazon.com/blogs/storage/feed/
 training, https://aws.amazon.com/blogs/training-and-certification/feed/
 whats-new, https://aws.amazon.com/new/feed/ 
