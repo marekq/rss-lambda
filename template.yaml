@@ -22,10 +22,6 @@ Parameters:
       - 'n'
 
 Resources:
-  sqsqueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      VisibilityTimeout: 60
 
   rssdynamo:
     Type: 'AWS::Serverless::Function'
@@ -35,17 +31,18 @@ Resources:
       CodeUri: lambda-dynamo/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'ses:SendEmail'
+              Resource: '*'
         - ComprehendFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
       MemorySize: 3008
       Timeout: 60
       Events:
-        sqstrigger:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt sqsqueue.Arn
-            BatchSize: 1
         Schedule1:
           Type: Schedule
           Properties:
@@ -61,11 +58,6 @@ Resources:
       ReservedConcurrentExecutions: 3
       Layers: 
         - !Ref lambdalayer
-      EventInvokeConfig:
-        DestinationConfig:
-          OnSuccess:
-            Type: Lambda
-            Destination: !GetAtt rssemail.Arn
 
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
@@ -79,25 +71,6 @@ Resources:
       RetentionPolicy: Retain
     Metadata:
       BuildMethod: python3.8
-
-  rssemail:
-    Type: 'AWS::Serverless::Function'
-    Properties:
-      Handler: lambda.handler
-      Runtime: python3.8
-      CodeUri: lambda-email/
-      Description: 'Send an email with the AWS blog summary'
-      Policies:
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - 'ses:SendEmail'
-              Resource: '*'
-      MemorySize: 512
-      Timeout: 10
-      Tracing: Active
-      ReservedConcurrentExecutions: 3
 
   rssfeed:
     Type: 'AWS::DynamoDB::Table'

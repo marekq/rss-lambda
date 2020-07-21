@@ -7,9 +7,11 @@ Monitor the AWS blog through RSS and get a notification whenever a new blog is p
 Installation
 ------------
 
-- Make sure the AWS SAM CLI and Docker are installed on your local machine.
-- If you want, you can edit the RSS feeds in 'lambda/feeds.txt'. These contain various AWS blogs by default.
+- Make sure the AWS SAM CLI and Docker are installed and configured on your local machine.
+- If you want, you can edit the RSS feeds in 'lambda/feeds.txt'. These contain 40 AWS blogs by default.
 - Run 'bash deploy.sh' to deploy the stack. If the 'samconfig.toml' file is not present, you will have to enter the stack details manually. 
+
+Note: the 'rssdynamo' function is configured with 3GB of memory and a timeout of 60 seconds. On the initial invocation, the function will need to retrieve a few hundred records and may run for a minute or longer. After the table is populated, the memory and timeout settings can be drastically reduced, which is a best practice to prevent any unneccesary costs. If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values. 
 
 
 About the repo contents
