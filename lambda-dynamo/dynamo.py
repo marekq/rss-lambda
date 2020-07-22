@@ -15,7 +15,7 @@ patch_all()
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 25)).Table(os.environ['dynamo_table'])
-com = boto3.client(service_name = 'comprehend', region_name = 'eu-west-1')
+com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
 
 # create a queue for multiprocessing
