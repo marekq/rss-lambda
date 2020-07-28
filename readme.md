@@ -1,11 +1,10 @@
 rss-lambda
 ==========
 
-Monitor 40 different AWS blogs through RSS and get a notification whenever a new blog is posted. New blogposts are stored in DynamoDB and (optionally) sent out through email using SES. The Lambda function to retrieve the blogs runs every 10 minutes by default. 
+Monitor 40 different AWS blogs through RSS and get a notification whenever a new blog is posted. New blogposts are stored in DynamoDB and (optionally) sent out through email using SES. The Lambda function to retrieve the blogs runs every 10 minutes by default. The cost for running the solution should be less than $3 per month based on this polling frequency. 
 
 
 ![alt text](./docs/architecture.png)
-
 
 
 Installation
@@ -17,7 +16,10 @@ Installation
 - If you optionally select to use email notifications using SES, you will need to ensure that you have the SES sender and email address preconfigured in your account. There is unfortunately no simple way to provision this using SAM. 
 
 
-Note: the 'rssdynamo' function is configured with 3GB of memory and a timeout of 60 seconds. On the initial invocation, the function will need to retrieve a few hundred records and may run for a minute or longer. After the table is populated, the memory and timeout settings can be drastically reduced, which is a best practice to prevent any unneccesary costs. If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values. A Lambda concurrency limit of 1 is set for the Lambda to prevent a high amount of parallel invocations running.
+Note: the 'rssdynamo' function is configured with 1GB of memory and a timeout of 30 seconds. On the initial invocation, the function will need to retrieve records from the last 72 hours and may run for up to 20-30 seconds. After the table is populated, the timeout setting can be drastically reduced, which is a best practice to prevent any unneccesary costs. 
+
+
+If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values and better visibility over the process. A Lambda concurrency limit of 1 is set for the Lambda to prevent a high amount of parallel invocations running.
 
 
 About the repo contents
@@ -29,6 +31,12 @@ The following description describes briefly what the files and folder contains;
 - The *template.yaml* file is the SAM CloudFormation stack for the deployment. You do not need to edit this file directly unless you want to change some of the default values of the stack. 
 - The *lambda-dynamo* folder contains the source code for the RSS retrieval Lambda. The function also optionally sends an email through SES when new articles are retrieved. You will also find the *feeds.txt* file here that contain the RSS feeds which should be checked.
 - The *lambda-layer* folder contains the *requirements.txt* file for the Lambda layer of the blog retrieval function. 
+
+
+License
+-------
+
+MIT-0, please see the 'LICENSE' file for more info. 
 
 
 Contact

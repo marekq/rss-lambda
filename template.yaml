@@ -40,8 +40,8 @@ Resources:
         - ComprehendFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
-      MemorySize: 3008
-      Timeout: 60
+      MemorySize: 1024
+      Timeout: 30
       Events:
         Schedule1:
           Type: Schedule
@@ -67,7 +67,7 @@ Resources:
       ContentUri: lambda-layer/
       CompatibleRuntimes:
         - python3.8
-      LicenseInfo: ''
+      LicenseInfo: 'MIT-0'
       RetentionPolicy: Retain
     Metadata:
       BuildMethod: python3.8
@@ -96,4 +96,6 @@ Resources:
         - AttributeName: timest
           KeyType: RANGE
         Projection:
-          ProjectionType: ALL
+          NonKeyAttributes:
+            - guid
+          ProjectionType: INCLUDE
