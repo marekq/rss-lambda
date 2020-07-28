@@ -21,30 +21,32 @@ ses = boto3.client('ses')
 # create a queue for multiprocessing
 q1 = queue.Queue()
 
-# get all the urls of links that are already stored in dynamodb
+# get the blogpost guids that are already stored in dynamodb table
 @xray_recorder.capture("get_guids")
-def get_guids():
-	a = []
-	
-	c = ddb.query(IndexName = 'allts', KeyConditionExpression = Key('allts').eq('y'), ProjectionExpression = 'guid')
+def get_guids(ts):
+	guids = []
 
-	for x in c['Items']:
+	# get the guid values up to x days ago
+	queryres = ddb.query(IndexName = 'guids', KeyConditionExpression = Key('visible').eq('y'), FilterExpression= Key('timest').gt(str(ts)))
+
+	for x in queryres['Items']:
 		if 'guid' in x:
 			if x['guid'] not in a:
-				a.append(x['guid'])
+				guids.append(x['guid'])
 
+	# paginate the query in case more than 100 results are returned
 	while 'LastEvaluatedKey' in c:
-		c = ddb.query(ExclusiveStartKey = c['LastEvaluatedKey'], IndexName = 'allts', KeyConditionExpression = Key('allts').eq('y'), ProjectionExpression = 'guid')
+		c = ddb.query(ExclusiveStartKey = c['LastEvaluatedKey'], IndexName = 'guids', KeyConditionExpression = Key('timest').gt(str(ts)), ProjectionExpression = 'guid')
 
-		for x in c['Items']:
+		for x in queryres['Items']:
 			if 'guid' in x:
-				if x['guid'] not in a:
-					a.append(x['guid'])
+				if x['guid'] not in guids:
+					guids.append(x['guid'])
 
-	xray_recorder.current_subsegment().put_annotation('postcountguid', str(len(a)))
+	xray_recorder.current_subsegment().put_annotation('postcountguid', str(len(guids)))
 
-	print('len allts '+str(len(a)))
-	return a
+	print('guids found: '+str(len(guids)))
+	return guids
 
 
 # worker for queue jobs
@@ -60,13 +62,13 @@ def get_rss(url):
 	return feedparser.parse(url)
 
 
-# read the url's from 'feeds.txt'
+# read the url's from 'feeds.txt' stored in the lambda function
 def read_feed():
 	r = {}
 	f = 'feeds.txt'
 	c = 0
 
-	# open the feeds file and read line by line
+	# open the feeds.txt file and read line by line
 	with open(f) as fp:
 		line = fp.readline()
 		while line:
@@ -99,12 +101,12 @@ def ts_dynamo(s, source):
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
 def put_dynamo(s, timest, title, desc, link, source, auth, guid, tags, category):
+
+	# if no description was submitted, put a dummy value
 	if len(desc) == 0:
 		desc = '...'
 	
-	xray_recorder.current_subsegment().put_annotation('ddbposturl', str(link))
-	xray_recorder.current_subsegment().put_annotation('ddbpostfields', str(str(timest)+' '+title+' '+desc+' '+link+' '+source+' '+auth+' '+guid+' '+tags+' '+category))
-
+	# put the record into dynamodb
 	ddb.put_item(TableName = os.environ['dynamo_table'], 
 		Item = {
 			'timest' : timest,
@@ -115,19 +117,28 @@ def put_dynamo(s, timest, title, desc, link, source, auth, guid, tags, category)
 			'author' : auth,
 			'tag' : tags,
 			'lower-tag' : tags.lower(),
-			'allts' : 'y',
 			'guid' : guid,
 			'tags' : tags,
-			'category' : category
+			'category' : category,
+			'visible' : 'y'			
+			# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		})
+
+	# add dynamodb xray traces
+	xray_recorder.current_subsegment().put_annotation('ddbposturl', str(link))
+	xray_recorder.current_subsegment().put_annotation('ddbpostfields', str(str(timest)+' '+title+' '+desc+' '+link+' '+source+' '+auth+' '+guid+' '+tags+' '+category))
 
 
 # retrieve the url of a blogpost
 @xray_recorder.capture("retrieveurl")
 def retrieve(url):
+
+	# retrieve the url
 	r = requests.get(url)
 	s = BeautifulSoup(r.text, 'html.parser')
 
+	# try finding an aws-page-content block in the html output
+	# limit the blog text size to under 5000 bytes so that it can be analyzed with Comprehend (this section can be improved...)
 	try:					
 		t = s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')[:4750]
 
@@ -143,29 +154,34 @@ def comprehend(txt, title):
 	c = []
 	f = False
 
+	# check whether organization or title labels were found by comprehend
 	for x in com.detect_entities(Text = txt[:4000], LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE':
 			if x['Text'] not in c and x['Text'] != 'AWS' and x['Text'] != 'Amazon' and x['Text'] != 'aws':
 				c.append(x['Text'])
 				f	= True
 
+	# if no tags were retrieved, add the default aws tag
 	if f:
 		tags = ', '.join(c)
 		
 	else:
 		tags = 'aws'
 
+	# print retrieved results and return tag values
 	print(title, '\n', tags, '\n')
 	
 	return(tags)
 
 
-# send an email out whenever a new blogpost was found
+# send an email out whenever a new blogpost was found - this feature is optional
 @xray_recorder.capture("send_mail")
 def send_mail(msg, subj, dest, title, auth, desc, link):
 
+	# create a simple html body for the email
 	mamsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+'</i><br><br>'+desc+'<br><br><a href='+link+'">view post here</a></body></html>'
 
+	# send the email using SES
 	r = ses.send_email(
 		Source = os.environ['fromemail'],
 		Destination = {'ToAddresses': [dest]},
@@ -187,12 +203,18 @@ def send_mail(msg, subj, dest, title, auth, desc, link):
 # main function to kick off collection of an rss feed
 @xray_recorder.capture("get_feed")
 def get_feed(f):
+
+	# set the url and source value of the blog
 	url = f[0]
 	source = f[1]
+
+	# get the rss feed
 	d = get_rss(url)
 
 	# get the newest blogpost article from DynamoDB
 	maxts = ts_dynamo(ddb, source)
+
+	# get the title and category name of the blogpost for debugging purposes
 	t = ddb.get_item(Key = {'timest': maxts, 'source': source})
 
 	# print an error if no blogpost article was found in DynamoDB
@@ -201,64 +223,61 @@ def get_feed(f):
 
 	except Exception as e:
 		print('could not find blogs for '+source)
-
-	# create a list for timestamps
-	stamps = []
 	
-	# check all the retrieved articles
+	# check all the retrieved articles for published dates
 	for x in d['entries']:
-		timest = int(time.mktime(x['published_parsed']))
-		c = int(stamps.count(timest))
 
-		link = str(x['link'])
-		title = str(x['title'])
+		# retrieve post guid
 		guid = str(x['guid'])
+		timest_post = int(time.mktime(x['published_parsed']))
 
-		# TODO - make a better fix to prevent blogposts with identical timestamps from overwriting content in dynamodb
-		if c != 1:
-			#print('$ adding '+str(c)+' to timestamp '+str(timest)+' for '+link.strip()+' due to double timestamp in source feed')
-			timest = timest + c
+		timest_now = int(time.time())
+		timest_3d_ago = timest_now - (86400 * 3)
 
-		# if the post guid is not found in dynamodb, retrieve the record
-		if guid not in guids:
+		# if the post guid is not found in dynamodb and newer than 3 days, retrieve the record
+		if guid not in guids and (timest):
+
+			# retrieve other blog post values
+			link = str(x['link'])
+			title = str(x['title'])
+			auth = str(x['author'])
+
+			# retrieve blogpost link			
 			print('retrieving '+str(title)+' in '+str(source)+' using url '+str(link)+'\n')
-			stamps.append(timest)
-	
+			txt = retrieve(link)
+
+			# discover tags with comprehend on html output
+			tags = comprehend(txt, title)	
+
 			# retrieve blog date and description text
 			date = str(x['published_parsed'])
 
-			# clean up blog post description text 
+			# clean up blog post description text and remove unwanted characters (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
 			desc = r.sub('', str(des)).strip('&nbsp;')
 			
-			guid = str(x['id'])
+			# submit the retrieved tag values discovered by comprehend to the list
+			category_tmp = []
 
-			# submit retrieved tag values to list
-			cc = []
-
-			for a in x['tags']:
-				cc.append(str(a['term']))
+			for tag in x['tags']:
+				category_tmp.append(str(tag['term']))
 	
 			# join category fields in one string
 			if len(cc) != 0:
-				category = str(', '.join(cc))
+				category = str(', '.join(category_tmp))
+
 			else:
 				category = '.'
-			
-			# retrieve other blog post values
-			auth = str(x['author'])
-			txt = retrieve(link)
-			tags = comprehend(txt, title)			
-			mailt = source.upper()+' - '+title
-			recpt = os.environ['toemail']
 			
 			# write the record to dynamodb
 			put_dynamo(ddb, str(timest), title, desc, link, source, auth, guid, tags, category)
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
-		
+
+				mailt = source.upper()+' - '+title
+				recpt = os.environ['toemail']
 				send_mail(desc, title, recpt, title, auth, desc, link)
 
 
@@ -266,9 +285,13 @@ def get_feed(f):
 @xray_recorder.capture("handler")
 def handler(event, context): 
 	
+	# get the unix timestamp from 3 days ago
+	global ts_old
+	ts_old = int(time.time()) - (86400 * 3)
+
 	# get post guids
 	global guids
-	guids = get_guids()
+	guids = get_guids(ts_old)
 
 	# get feed url's from local file
 	feeds, thr = read_feed()
