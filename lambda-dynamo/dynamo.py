@@ -13,6 +13,7 @@ import feedparser
 
 patch_all()
 
+
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 25)).Table(os.environ['dynamo_table'])
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
@@ -63,6 +64,7 @@ def get_rss(url):
 
 
 # read the url's from 'feeds.txt' stored in the lambda function
+@xray_recorder.capture("read_feed")
 def read_feed():
 	r = {}
 	f = 'feeds.txt'
@@ -100,7 +102,7 @@ def ts_dynamo(s, source):
 
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
-def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, category):
+def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, category, date):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
 	if len(desc) == 0:
@@ -120,6 +122,7 @@ def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, cate
 			'guid' : guid,
 			'tags' : tags,
 			'category' : category,
+			'date' : date,
 			'visible' : 'y'			
 			# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		})
@@ -140,7 +143,7 @@ def retrieve(url):
 	# try finding an aws-page-content block in the html output
 	# limit the blog text size to under 5000 bytes so that it can be analyzed with Comprehend (this section can be improved...)
 	try:					
-		t = s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')[:4750]
+		t = s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')
 
 	except Exception as e:
 		t = '.'
@@ -155,7 +158,7 @@ def comprehend(txt, title):
 	f = False
 
 	# check whether organization or title labels were found by comprehend
-	for x in com.detect_entities(Text = txt[:4000], LanguageCode = 'en')['Entities']:
+	for x in com.detect_entities(Text = txt[:4750], LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE':
 			if x['Text'] not in c and x['Text'] != 'AWS' and x['Text'] != 'Amazon' and x['Text'] != 'aws':
 				c.append(x['Text'])
@@ -174,10 +177,10 @@ def comprehend(txt, title):
 
 # send an email out whenever a new blogpost was found - this feature is optional
 @xray_recorder.capture("send_mail")
-def send_mail(msg, subj, dest, title, auth, desc, link):
+def send_mail(msg, dest, title, source, auth, desc, link, date):
 
 	# create a simple html body for the email
-	mamsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+'</i><br><br>'+desc+'<br><br><a href='+link+'">view post here</a></body></html>'
+	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+' on ' + str(date) +'</i><br><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>'
 
 	# send the email using SES
 	r = ses.send_email(
@@ -185,17 +188,17 @@ def send_mail(msg, subj, dest, title, auth, desc, link):
 		Destination = {'ToAddresses': [dest]},
 		Message = {
 			'Subject': {
-				'Data': subj
+				'Data': source + ' - ' + title
 			},
 			'Body': {
 				'Html': {
-					'Data': mamsg
+					'Data': mailmsg
 				}
 			}
 		}
 	)
 	
-	print('sent email with subject '+subj)
+	print('sent email with subject ' + source + ' - ' + title + ' to ' + dest)
 
 
 # main function to kick off collection of an rss feed
@@ -218,12 +221,11 @@ def get_feed(f):
 	# print an error if no blogpost article was found in DynamoDB
 	try:
 		x = 'last blogpost in dynamodb for '+source+' has title '+str(t['Item']['title'])+'\n'
+		#print(x)
 
 	except Exception as e:
-		x = 'could not find blogs for '+source + ' in dynamodb table. by default, only blog posts from the last 3 days are retrieved.'
-	
-	# print debug string to stdout - disabled by default
-	#print(x)
+		x = 'could not find blogs for '+source + ' in dynamodb table. by default, only blog posts from the last 3 days are retrieved.'	
+		print(x)
 
 	# check all the retrieved articles for published dates
 	for x in d['entries']:
@@ -270,14 +272,14 @@ def get_feed(f):
 				category = '.'
 			
 			# write the record to dynamodb
-			put_dynamo(ddb, str(timest_post), title, desc, link, source, auth, guid, tags, category)
+			put_dynamo(ddb, str(timest_post), title, desc, link, source, auth, guid, tags, category, date)
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
 
 				mailt = source.upper()+' - '+title
 				recpt = os.environ['toemail']
-				send_mail(desc, title, recpt, title, auth, desc, link)
+				send_mail(desc, recpt, title, source, auth, desc, link, date)
 
 
 # lambda handler
@@ -285,7 +287,6 @@ def get_feed(f):
 def handler(event, context): 
 	
 	# get the unix timestamp from 3 days ago from now
-	global ts_old
 	ts_old = int(time.time()) - (86400 * 3)
 
 	# get post guids stored in dynamodb
@@ -299,7 +300,7 @@ def handler(event, context):
 	for source, url in feeds.items():
 		q1.put([url, source])
 
-	# start 20 threads
+	# start thread per feed
 	for x in range(thr):
 		t = threading.Thread(target = worker)
 		t.daemon = True
