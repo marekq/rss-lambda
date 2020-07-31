@@ -37,7 +37,7 @@ def get_guids(ts):
 
 	# paginate the query in case more than 100 results are returned
 	while 'LastEvaluatedKey' in queryres:
-		c = ddb.query(ExclusiveStartKey = c['LastEvaluatedKey'], IndexName = 'guids', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], IndexName = 'guids', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
 
 		for x in queryres['Items']:
 			if 'guid' in x:
