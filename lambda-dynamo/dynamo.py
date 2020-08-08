@@ -91,7 +91,7 @@ def read_feed():
 
 # get the timestamp of the latest blogpost stored in DynamoDB
 def ts_dynamo(s, source):
-	r		= ddb.query(KeyConditionExpression=Key('source').eq(source))
+	r		= ddb.query(KeyConditionExpression = Key('source').eq(source))
 	ts 		= ['0']
 
 	for y in r['Items']:
@@ -102,7 +102,7 @@ def ts_dynamo(s, source):
 
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
-def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, category, date):
+def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, category, datestr):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
 	if len(desc) == 0:
@@ -122,7 +122,7 @@ def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, cate
 			'guid' : guid,
 			'tags' : tags,
 			'category' : category,
-			'date' : date,
+			'date' : datestr,
 			'visible' : 'y'			
 			# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		})
@@ -177,10 +177,10 @@ def comprehend(txt, title):
 
 # send an email out whenever a new blogpost was found - this feature is optional
 @xray_recorder.capture("send_mail")
-def send_mail(msg, dest, title, source, auth, desc, link, date):
+def send_mail(msg, dest, title, source, auth, desc, link, datestr):
 
 	# create a simple html body for the email
-	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+' on ' + str(date) +'</i><br><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>'
+	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(auth)+' on ' + str(datestr) +'</i><br><br>'+desc+'<br><br><a href="'+link+'">view post here</a></body></html>'
 
 	# send the email using SES
 	r = ses.send_email(
@@ -251,7 +251,8 @@ def get_feed(f):
 			tags = comprehend(txt, title)	
 
 			# retrieve blog date and description text
-			date = str(x['published_parsed'])
+			dateraw = x['published_parsed']
+			datestr = time.strftime('%d-%m-%Y %H:%M', (dateraw))
 
 			# clean up blog post description text and remove unwanted characters (this can be improved further)
 			des	= str(x['description'])
@@ -272,14 +273,14 @@ def get_feed(f):
 				category = '.'
 			
 			# write the record to dynamodb
-			put_dynamo(ddb, str(timest_post), title, desc, link, source, auth, guid, tags, category, date)
+			put_dynamo(ddb, str(timest_post), title, desc, link, source, auth, guid, tags, category, datestr)
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
 
 				mailt = source.upper()+' - '+title
 				recpt = os.environ['toemail']
-				send_mail(desc, recpt, title, source, auth, desc, link, date)
+				send_mail(desc, recpt, title, source, auth, desc, link, datestr)
 
 
 # lambda handler
@@ -306,4 +307,3 @@ def handler(event, context):
 		t.daemon = True
 		t.start()
 	q1.join()
-
