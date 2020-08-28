@@ -1,18 +1,17 @@
 #!/usr/bin/python
 # @marekq
 # www.marek.rocks
-import base64, botocore, boto3, json, re, os, requests, queue, sys, threading, time
+import base64, botocore, boto3, json, os, re, readability, requests, queue, sys, threading, time
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import date
+from bs4 import *
 
 from aws_xray_sdk.core import xray_recorder
 from aws_xray_sdk.core import patch_all
 
-from bs4 import *
 import feedparser
 
 patch_all()
-
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 25)).Table(os.environ['dynamo_table'])
@@ -136,19 +135,16 @@ def put_dynamo(s, timest_post, title, desc, link, source, auth, guid, tags, cate
 @xray_recorder.capture("retrieveurl")
 def retrieve(url):
 
-	# retrieve the url
-	r = requests.get(url)
-	s = BeautifulSoup(r.text, 'html.parser')
+	# retrieve the main text section from the url using the readability module
+	req = requests.get(url)
+	doc = readability.Document(req.text)
+	rawtext = doc.summary()
 
-	# try finding an aws-page-content block in the html output
-	# limit the blog text size to under 5000 bytes so that it can be analyzed with Comprehend (this section can be improved...)
-	try:					
-		t = s.find("div",  attrs = {"id" : "aws-page-content"}).getText(separator=' ')
+	# remove any html tags from output
+	soup = BeautifulSoup(rawtext, 'html.parser')
+	cleantext = str(soup.get_text())
 
-	except Exception as e:
-		t = '.'
-
-	return t
+	return cleantext
 
 
 # analyze the text of a blogpost using the AWS Comprehend service
@@ -158,7 +154,7 @@ def comprehend(txt, title):
 	f = False
 
 	# check whether organization or title labels were found by comprehend
-	for x in com.detect_entities(Text = txt[:4750], LanguageCode = 'en')['Entities']:
+	for x in com.detect_entities(Text = txt[:4950], LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE':
 			if x['Text'] not in c and x['Text'] != 'AWS' and x['Text'] != 'Amazon' and x['Text'] != 'aws':
 				c.append(x['Text'])
@@ -188,7 +184,7 @@ def send_mail(msg, dest, title, source, auth, desc, link, datestr):
 		Destination = {'ToAddresses': [dest]},
 		Message = {
 			'Subject': {
-				'Data': source + ' - ' + title
+				'Data': source.upper() + ' - ' + title
 			},
 			'Body': {
 				'Html': {
@@ -273,14 +269,14 @@ def get_feed(f):
 				category = '.'
 			
 			# write the record to dynamodb
-			put_dynamo(ddb, str(timest_post), title, desc, link, source, auth, guid, tags, category, datestr)
+			put_dynamo(ddb, str(timest_post), title, txt, link, source, auth, guid, tags, category, datestr)
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
 
 				mailt = source.upper()+' - '+title
 				recpt = os.environ['toemail']
-				send_mail(desc, recpt, title, source, auth, desc, link, datestr)
+				send_mail(desc, recpt, title, source, auth, txt, link, datestr)
 
 
 # lambda handler

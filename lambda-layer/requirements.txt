@@ -1,4 +1,5 @@
 aws-xray-sdk
 BeautifulSoup4
+readability-lxml
 feedparser
 requests
