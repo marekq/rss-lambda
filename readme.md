@@ -1,7 +1,11 @@
 rss-lambda
 ==========
 
-Monitor 40 different AWS blogs through RSS and get a notification whenever a new blog is posted. New blogposts are stored in DynamoDB and (optionally) sent out through email using SES. The Lambda function to retrieve the blogs runs every 10 minutes by default. The cost for running the solution should be less than $3 per month based on this polling frequency. 
+Monitor your favourite blogs through RSS and get a notification whenever a new blog is posted. New blogposts are stored in DynamoDB and (optionally) sent out through email using SES. The Lambda function to retrieve the blogs runs every 10 minutes by default. The cost for running the solution should be less than $3 per month, which is mostly influenced by the polling frequency. 
+
+You can extend the blog scraper by adding your own RSS feeds to monitor. By default various AWS related feeds are included, but you can add any of your own feeds in the *lambda-dynamo/feeds.txt* file. Within the DynamoDB table that is deployed, you can find various details about the blogposts and also the text or html versions of the content. This can be helpful in case you are building your own feed scraper or notification service. 
+
+The feed retrieval feature uses a "readability" library which works similarly to the "Reader View" function of the Apple Safari browser. This makes it convenient to read the full text of a blogpost in your email client or on mobile. All of the links, images and text markup is preserved. 
 
 
 ![alt text](./docs/architecture.png)
@@ -11,7 +15,7 @@ Installation
 ------------
 
 - Make sure the AWS SAM CLI and Docker are installed and configured on your local machine.
-- If you want, you can edit the RSS feeds in 'lambda/feeds.txt'. These contain 40 AWS blogs by default.
+- If you want, you can edit the RSS feeds in 'lambda/feeds.txt'. These contain various AWS blogs I read by default.
 - Run 'bash deploy.sh' to deploy the stack. If the 'samconfig.toml' file is not present, you will have to enter the stack details manually. 
 - If you optionally select to use email notifications using SES, you will need to ensure that you have the SES sender and email address preconfigured in your account. There is unfortunately no simple way to provision this using SAM. 
 
