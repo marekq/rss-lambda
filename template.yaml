@@ -20,6 +20,11 @@ Parameters:
     AllowedValues: 
       - 'y'
       - 'n'
+  
+  DaysToRetrieve:
+    Description: Configure how far to look back in time while retrieving blogposts, default 3 days
+    Default: 3
+    Type: Number
 
 Resources:
 
@@ -54,6 +59,7 @@ Resources:
           fromemail: !Ref SourceEmail
           toemail: !Ref DestEmail
           sendemails: !Ref SendEmails
+          daystoretrieve: !Ref DaysToRetrieve
       Tracing: Active
       ReservedConcurrentExecutions: 3
       Layers: 

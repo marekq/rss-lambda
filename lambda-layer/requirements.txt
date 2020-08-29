@@ -1,5 +1,6 @@
 aws-xray-sdk
 BeautifulSoup4
+fake-useragent
 readability-lxml
 feedparser
 requests

@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # build the lambda package in a docker container
-sam build -u
+sam build --use-container --skip-pull-image
 
 # validate the sam stack
 echo -e "\n${RED} * Running SAM validate locally to test function... ${NC}\n"
