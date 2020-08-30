@@ -104,7 +104,7 @@ def ts_dynamo(s, source):
 
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
-def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr):
+def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
 	if len(desc) == 0:
@@ -113,21 +113,20 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author
 	# put the record into dynamodb
 	ddb.put_item(TableName = os.environ['dynamo_table'], 
 		Item = {
-			'timest' : timest_post,
+			'timest' : timest_post,			# store the unix timestamp of the post
+			'datestr' : datestr_post,		# store the human friendly timestamp of the post
 			'title' : title,
-			'desc' : desc,
-			'fulltxt': cleantxt,
-			'rawhtml': rawhtml,
+			'desc' : desc,					# store the short rss feed description of the content
+			'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
+			'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
 			'link' : link,
 			'source' : source,
 			'author' : author,
 			'tag' : tags,
-			'lower-tag' : tags.lower(),
-			'guid' : guid,
+			'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
+			'guid' : guid,					# store the blogpost guid as a unique key
 			'category' : category,
-			'date' : datestr,
-			'visible' : 'y'			
-			# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
+			'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		})
 
 	# add dynamodb xray traces
@@ -189,10 +188,10 @@ def comprehend(cleantxt, title):
 
 # send an email out whenever a new blogpost was found - this feature is optional
 @xray_recorder.capture("send_mail")
-def send_mail(recpt, title, source, author, rawhtml, link, datestr):
+def send_mail(recpt, title, source, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
-	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(author)+' on ' + str(datestr) + '</i><br>'
+	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(author)+' on ' + str(datestr_post) + '</i><br>'
 	mailmsg += '<a href="' + link + '">view post here</a><br><br>' + str(rawhtml) + '<br></body></html>'
 
 	# send the email using SES
@@ -223,38 +222,46 @@ def get_feed(f):
 	source = f[1]
 
 	# get the rss feed
-	d = get_rss(url)
+	rssfeed = get_rss(url)
 
 	# get the newest blogpost article from DynamoDB
 	maxts = ts_dynamo(ddb, source)
 
 	# get the title and category name of the blogpost for debugging purposes
-	t = ddb.get_item(Key = {'timest': maxts, 'source': source})
+	tablefeed = ddb.get_item(Key = {'timest': maxts, 'source': source})
 
 	# print an error if no blogpost article was found in DynamoDB
 	try:
-		x = 'last blogpost in dynamodb for '+source+' has title '+str(t['Item']['title'])+'\n'
-		#print(x)
+		x = 'last downloaded blogpost for '+source+' has title '+str(tablefeed['Item']['title'])+'\n'
+		print(x)
 
 	except Exception as e:
-		x = 'could not find blogs for '+source + ' in dynamodb table. by default, only blog posts from the last ' + str(days_to_retrieve) + ' days are retrieved.'	
+		x = 'could not find blogs for '+source + ' in dynamodb table. by default, only blog posts from the last ' + str(days_to_retrieve) + ' days are retrieved\n'	
 		print(x)
 
 	# check all the retrieved articles for published dates
-	for x in d['entries']:
+	for x in rssfeed['entries']:
 
 		# retrieve post guid
 		guid = str(x['guid'])
-		timest_post = int(time.mktime(x['published_parsed']))
+		timest_post = int(time.mktime(x['updated_parsed']))
 		timest_now = int(time.time())
 
-		# if the post guid is not found in dynamodb and newer than 30 days, retrieve the record
+		# retrieve blog date and description text
+		datestr_post = time.strftime('%d-%m-%Y %H:%M', x['updated_parsed'])
+
+		# if the post guid is not found in dynamodb and newer than the specified amount of days, retrieve the record
 		if guid not in guids and (timest_now < timest_post + (86400 * days_to_retrieve)):
 
 			# retrieve other blog post values
 			link = str(x['link'])
 			title = str(x['title'])
-			author = str(x['author'])
+
+			# retrieve the blogpost author if available
+			if x.has_key('author'):
+				author = str(x['author'])
+			else:
+				author = 'blank'
 
 			# retrieve blogpost link			
 			print('retrieving '+str(title)+' in '+str(source)+' using url '+str(link)+'\n')
@@ -263,10 +270,6 @@ def get_feed(f):
 			# discover tags with comprehend on html output
 			tags = comprehend(cleantxt, title)	
 
-			# retrieve blog date and description text
-			dateraw = x['published_parsed']
-			datestr = time.strftime('%d-%m-%Y %H:%M', (dateraw))
-
 			# clean up blog post description text and remove unwanted characters (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
@@ -274,19 +277,17 @@ def get_feed(f):
 			
 			# submit the retrieved tag values discovered by comprehend to the list
 			category_tmp = []
+			category = 'none'
 
-			for tag in x['tags']:
-				category_tmp.append(str(tag['term']))
-	
 			# join category fields in one string
-			if len(category_tmp) != 0:
+			if x.has_key('tags'):
+				for tag in x['tags']:
+					category_tmp.append(str(tag['term']))
+	
 				category = str(', '.join(category_tmp))
-
-			else:
-				category = '.'
 			
 			# write the record to dynamodb
-			put_dynamo(str(timest_post), title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr)
+			put_dynamo(str(timest_post), title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post)
 
 			# if sendemails enabled, generate the email message body for ses and send email
 			if os.environ['sendemails'] == 'y':
@@ -296,7 +297,7 @@ def get_feed(f):
 				recpt = os.environ['toemail']
 
 				# send the email
-				send_mail(recpt, title, source, author, rawhtml, link, datestr)
+				send_mail(recpt, title, source, author, rawhtml, link, datestr_post)
 
 
 # lambda handler
