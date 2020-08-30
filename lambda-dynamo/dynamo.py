@@ -68,12 +68,12 @@ def get_rss(url):
 # read the url's from 'feeds.txt' stored in the lambda function
 @xray_recorder.capture("read_feed")
 def read_feed():
-	r = {}
-	f = 'feeds.txt'
-	c = 0
+	result = {}
+	filen = 'feeds.txt'
+	count = 0
 
 	# open the feeds.txt file and read line by line
-	with open(f) as fp:
+	with open(filen) as fp:
 		line = fp.readline()
 		while line:
 
@@ -81,26 +81,27 @@ def read_feed():
 			src, url = line.split(',')
 
 			# add src and url to dict
-			r[src.strip()] = url.strip()
+			result[src.strip()] = url.strip()
 			line = fp.readline()
 
-			# add one to the count
-			c += 1
+			# add one to the count if less than 50, else we will spawn too many threads
+			if count < 50:
+				count += 1
 
-	# return the dict and count value
-	return r, c
+	# return the result and count value
+	return result, count
 
 
 # get the timestamp of the latest blogpost stored in DynamoDB
 def ts_dynamo(source):
-	r		= ddb.query(KeyConditionExpression = Key('source').eq(source))
-	ts 		= ['0']
+	results	= ddb.query(KeyConditionExpression = Key('source').eq(source))
+	timest 	= ['0']
 
-	for y in r['Items']:
-		ts.append(y['timest'])
+	for x in results['Items']:
+		timest.append(x['timest'])
 
 	# return max timestamp and count of found items
-	return max(ts), len(ts) - 1
+	return max(timest), len(timest) - 1
 
 
 # write the blogpost record into DynamoDB
@@ -174,15 +175,16 @@ def comprehend(cleantxt, title):
 	# check whether organization or title labels were found by Comprehend
 	for x in com.detect_entities(Text = fulltext, LanguageCode = 'en')['Entities']:
 		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE' or x['Type'] == 'COMMERCIAL_ITEM' or x['Type'] == 'PERSON':
-			detections.append(x['Text'])
-			found = True
+			if x['Text'] not in detections:
+				detections.append(x['Text'])
+				found = True
 
-	# if no tags were retrieved, add the default aws tag
+	# if no tags were retrieved, add a default tag
 	if found:
 		tags = ', '.join(detections)
 		
 	else:
-		tags = '.'
+		tags = 'none'
 
 	# return tag values	
 	return(tags)
