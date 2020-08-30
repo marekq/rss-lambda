@@ -95,7 +95,7 @@ Resources:
         KeyType: RANGE  
       BillingMode: PAY_PER_REQUEST
       GlobalSecondaryIndexes:
-      - IndexName: guids
+      - IndexName: timest
         KeySchema:
         - AttributeName: visible
           KeyType: HASH

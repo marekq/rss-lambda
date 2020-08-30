@@ -30,7 +30,7 @@ def get_guids(ts):
 	guids = []
 
 	# get the guid values up to x days ago
-	queryres = ddb.query(IndexName = 'guids', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+	queryres = ddb.query(IndexName = 'timest', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
 
 	for x in queryres['Items']:
 		if 'guid' in x:
@@ -39,7 +39,7 @@ def get_guids(ts):
 
 	# paginate the query in case more than 100 results are returned
 	while 'LastEvaluatedKey' in queryres:
-		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], IndexName = 'guids', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], IndexName = 'timest', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
 
 		for x in queryres['Items']:
 			if 'guid' in x:
@@ -92,14 +92,15 @@ def read_feed():
 
 
 # get the timestamp of the latest blogpost stored in DynamoDB
-def ts_dynamo(s, source):
+def ts_dynamo(source):
 	r		= ddb.query(KeyConditionExpression = Key('source').eq(source))
 	ts 		= ['0']
 
 	for y in r['Items']:
 		ts.append(y['timest'])
 
-	return max(ts)
+	# return max timestamp and count of found items
+	return max(ts), len(ts) - 1
 
 
 # write the blogpost record into DynamoDB
@@ -111,7 +112,8 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author
 		desc = '...'
 	
 	# put the record into dynamodb
-	ddb.put_item(TableName = os.environ['dynamo_table'], 
+	ddb.put_item(
+		TableName = os.environ['dynamo_table'], 
 		Item = {
 			'timest' : timest_post,			# store the unix timestamp of the post
 			'datestr' : datestr_post,		# store the human friendly timestamp of the post
@@ -225,14 +227,14 @@ def get_feed(f):
 	rssfeed = get_rss(url)
 
 	# get the newest blogpost article from DynamoDB
-	maxts = ts_dynamo(ddb, source)
+	maxts, countts = ts_dynamo(source)
 
 	# get the title and category name of the blogpost for debugging purposes
 	tablefeed = ddb.get_item(Key = {'timest': maxts, 'source': source})
 
 	# print an error if no blogpost article was found in DynamoDB
 	try:
-		x = 'last downloaded blogpost for '+source+' has title '+str(tablefeed['Item']['title'])+'\n'
+		x = 'found ' + str(countts) + ' stored blogs for ' + source + ' with title ' + str(tablefeed['Item']['title']) + '\n'
 		print(x)
 
 	except Exception as e:
