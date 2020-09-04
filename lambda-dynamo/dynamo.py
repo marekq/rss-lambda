@@ -2,9 +2,12 @@
 # @marekq
 # www.marek.rocks
 
-import base64, botocore, boto3, fake_useragent, feedparser, json, os, re, readability, requests, queue, sys, threading, time
+import base64, botocore, boto3, csv, fake_useragent, feedparser
+import gzip, json, os, re, readability, requests
+import queue, sys, threading, time
+
 from boto3.dynamodb.conditions import Key, Attr
-from datetime import date
+from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
 from aws_xray_sdk.core import xray_recorder
@@ -17,12 +20,15 @@ patch_all()
 days_to_retrieve = int(os.environ['daystoretrieve'])
 
 # establish a session with SES, DynamoDB and Comprehend
-ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 25)).Table(os.environ['dynamo_table'])
+ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
+s3 = boto3.client('s3')
+
 
 # create a queue for multiprocessing
 q1 = queue.Queue()
+
 
 # get the blogpost guids that are already stored in DynamoDB table
 @xray_recorder.capture("get_guids")
@@ -257,6 +263,10 @@ def get_feed(f):
 		# if the post guid is not found in dynamodb and newer than the specified amount of days, retrieve the record
 		if guid not in guids and (timest_now < timest_post + (86400 * days_to_retrieve)):
 
+			# add the blog source to the queue for updating json objects on S3
+			if source not in blog_queue:
+				blog_queue.append(source)
+
 			# retrieve other blog post values
 			link = str(x['link'])
 			title = str(x['title'])
@@ -290,18 +300,113 @@ def get_feed(f):
 	
 				category = str(', '.join(category_tmp))
 			
-			# write the record to dynamodb
-			put_dynamo(str(timest_post), title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post)
+			# write the record to dynamodb, only if the guid is not present already. this prevents double posts from appearing by crossposting. 
+			if guid not in guids:
+				put_dynamo(str(timest_post), title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post)
 
-			# if sendemails enabled, generate the email message body for ses and send email
-			if os.environ['sendemails'] == 'y':
+				# if sendemails enabled, generate the email message body for ses and send email
+				if os.environ['sendemails'] == 'y':
 
-				# get mail title and email recepient
-				mailt = source.upper()+' - '+title
-				recpt = os.environ['toemail']
+					# get mail title and email recepient
+					mailt = source.upper()+' - '+title
+					recpt = os.environ['toemail']
 
-				# send the email
-				send_mail(recpt, title, source, author, rawhtml, link, datestr_post)
+					# send the email
+					send_mail(recpt, title, source, author, rawhtml, link, datestr_post)
+
+			else:
+				
+				# skip, print message that a guid was found twice
+				print("skipped double guid " + guid + " " + source + " " + title + " " + datestr_post)
+
+
+# get the contents of the dynamodb table
+@xray_recorder.capture("get_table")
+def get_table(source):
+	res = []
+	now_ts = datetime.now()
+
+	# get timestamp from 30 days ago
+	old_ts = now_ts - timedelta(days = 30)
+	diff_ts = int(time.mktime(old_ts.timetuple()))
+
+	# query the dynamodb table for recent blogposts
+	blogs = ddb.query(KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+		
+	# iterate over the returned items
+	for a in blogs['Items']:
+		b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
+		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['desc']).strip() + '", "author": "'+ a['author'] +'"}'
+		res.append(b)
+	
+		# retrieve additional items if lastevaluatedkey was found 
+		while 'LastEvaluatedKey' in blogs:
+			lastkey = blogs['LastEvaluatedKey']
+			blogs = ddb.query(ExclusiveStartKey = lastkey, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+			
+			for a in blogs['Items']:
+				b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
+				b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['desc']).strip() + '", "author": "'+ a['author'] +'"}'
+				res.append(b)
+
+	# sort the json file by timestamp in reverse
+	out = sorted(res, reverse = True)
+
+	return out
+
+
+# copy the file to s3 with a public acl
+@xray_recorder.capture("cp_s3")
+def cp_s3(source):
+
+	s3.put_object(
+		Bucket = os.environ['s3bucket'], 
+		Body = open('/tmp/' + source + '.json', 'rb'), 
+		Key = source + '.json', 
+		ACL = 'public-read',
+		CacheControl = 'public, max-age=3600'
+	)
+
+
+# update json objects on S3 for single page web apps
+@xray_recorder.capture("update_json_s3")
+def update_json_s3(blog_queue):
+
+	# update the json per blog
+	for blog in blog_queue:
+
+		# get the json content from DynamoDB
+		out = get_table(blog)
+
+		# create the json and return path
+		fpath = make_json(out, blog)
+
+		# upload the json to s3
+		cp_s3(blog)
+
+		print('updated '+ blog + ' blog')
+
+
+# create a json file
+@xray_recorder.capture("make_json")
+def make_json(content, source):
+
+	fpath = '/tmp/' + source + '.json'
+
+	# write the json raw output to /tmp/
+	jsonf = open(fpath, 'w')
+	jsonf.write('{"content":')
+	jsonf.write(str(content).replace("'", "").replace("\\", ""))
+	jsonf.write('}')
+
+	# write the json gz output to /tmp
+	gzipf = gzip.GzipFile(fpath + '.gz', 'w')
+	gzipf.write('{"content":'.encode('utf-8') )
+	gzipf.write(str(content).replace("'", "").replace("\\", "").encode('utf-8') )
+	gzipf.write('}'.encode('utf-8') )
+	gzipf.close()
+
+	print('wrote to ' + fpath)
 
 
 # lambda handler
@@ -314,6 +419,10 @@ def handler(event, context):
 	# get post guids stored in dynamodb
 	global guids
 	guids = get_guids(ts_old)
+
+	# create list to store queues with new blogs
+	global blog_queue
+	blog_queue = []
 
 	# get feed url's from local feeds.txt file
 	feeds, thr = read_feed()
@@ -328,3 +437,7 @@ def handler(event, context):
 		t.daemon = True
 		t.start()
 	q1.join()
+
+	# update the json files on s3 for updated sources
+	if os.environ['storepublics3'] == 'y':
+		update_json_s3(blog_queue)

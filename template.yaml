@@ -20,6 +20,14 @@ Parameters:
     AllowedValues: 
       - 'y'
       - 'n'
+
+  StorePublicS3:
+    Description: Store a JSON object of blogposts as a public S3 file (default disabled).
+    Default: 'n'
+    Type: String
+    AllowedValues:
+      - 'y'
+      - 'n'
   
   DaysToRetrieve:
     Description: Configure how far to look back in time while retrieving blogposts, default 3 days
@@ -45,6 +53,8 @@ Resources:
         - ComprehendFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
+        - S3WritePolicy:
+            BucketName: !Ref PublicJsonBucket
       MemorySize: 1024
       Timeout: 30
       Events:
@@ -60,8 +70,10 @@ Resources:
           toemail: !Ref DestEmail
           sendemails: !Ref SendEmails
           daystoretrieve: !Ref DaysToRetrieve
+          s3bucket: !Ref PublicJsonBucket
+          storepublics3: !Ref StorePublicS3
       Tracing: Active
-      ReservedConcurrentExecutions: 3
+      ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
 
@@ -105,3 +117,6 @@ Resources:
           NonKeyAttributes:
             - guid
           ProjectionType: INCLUDE
+
+  PublicJsonBucket:
+    Type: AWS::S3::Bucket
