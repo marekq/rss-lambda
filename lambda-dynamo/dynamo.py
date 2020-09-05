@@ -308,12 +308,12 @@ def get_table_json(source):
 	if source != 'all':
 
 		# query the dynamodb table for blogposts of a specific category from up to 30 days old
-		blogs = ddb.query(ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
 	else:
 
 		# query the dynamodb table for all category blogposts from up to 30 days old
-		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 	# iterate over the returned items
 	for a in blogs['Items']:
@@ -328,12 +328,12 @@ def get_table_json(source):
 			if source != 'all':
 
 				# query the dynamodb table for blogposts of a specific category from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
 			else:
 
 				# query the dynamodb table for all category blogposts from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 
 			for a in blogs['Items']:

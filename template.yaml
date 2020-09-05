@@ -114,9 +114,7 @@ Resources:
         - AttributeName: timest
           KeyType: RANGE
         Projection:
-          NonKeyAttributes:
-            - guid
-          ProjectionType: INCLUDE
+          ProjectionType: ALL
 
   PublicJsonBucket:
     Type: AWS::S3::Bucket
