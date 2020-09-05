@@ -31,7 +31,17 @@ Installation
 Note: the 'rssdynamo' function is configured with 1GB of memory and a timeout of 30 seconds. On the initial invocation, the function will need to retrieve records from the last 72 hours and may run for up to 20-30 seconds. After the table is populated, the timeout setting can be drastically reduced, which is a best practice to prevent any unneccesary costs. 
 
 
-If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values and better visibility over the process. A Lambda concurrency limit of 1 is set for the Lambda to prevent a high amount of parallel invocations running.
+If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values and better visibility over the process. A Lambda concurrency limit of 2 is set for the Lambda to prevent a high amount of parallel invocations running.
+
+
+Roadmap
+-------
+
+- [ ] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
+- [ ] Optimize Lambda memory and timeout settings to lower cost. 
+- [X] Add "smart" extraction of the full blogpost text from the post URL, so that the full content of a post can be stored in DynamoDB or sent through e-mail.
+- [X] Add generation of JSON files with blogposts to S3 for easier inclusion in a single page app (i.e. deployed using Amplify or Netlify).
+- [X] Add support for retrieval of non AWS blogposts using RSS.
 
 
 About the repo contents

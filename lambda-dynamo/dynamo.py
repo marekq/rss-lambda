@@ -54,7 +54,7 @@ def get_guids(ts):
 
 	xray_recorder.current_subsegment().put_annotation('postcountguid', str(len(guids)))
 
-	print('guids found: '+str(len(guids)))
+	print('guids found in last ' + str(days_to_retrieve) + ' days : '+str(len(guids)))
 	return guids
 
 
@@ -100,7 +100,13 @@ def read_feed():
 
 # get the timestamp of the latest blogpost stored in DynamoDB
 def ts_dynamo(source):
-	results	= ddb.query(KeyConditionExpression = Key('source').eq(source))
+
+	# get timestamp from 30 days ago
+	now_ts = datetime.now()
+	old_ts = now_ts - timedelta(days = 30)
+	diff_ts = int(time.mktime(old_ts.timetuple()))
+
+	results	= ddb.query(KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 	timest 	= ['0']
 
 	for x in results['Items']:
@@ -201,7 +207,7 @@ def comprehend(cleantxt, title):
 def send_mail(recpt, title, source, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
-	mailmsg = '<html><body><h2>'+title+'</h2><br><i>Posted by '+str(author)+' on ' + str(datestr_post) + '</i><br>'
+	mailmsg = '<html><body><br><i>Posted by '+str(author)+' in ' +str(source) + ' blog on ' + str(datestr_post) + '</i><br><br>'
 	mailmsg += '<a href="' + link + '">view post here</a><br><br>' + str(rawhtml) + '<br></body></html>'
 
 	# send the email using SES
@@ -234,21 +240,6 @@ def get_feed(f):
 	# get the rss feed
 	rssfeed = get_rss(url)
 
-	# get the newest blogpost article from DynamoDB
-	maxts, countts = ts_dynamo(source)
-
-	# get the title and category name of the blogpost for debugging purposes
-	tablefeed = ddb.get_item(Key = {'timest': maxts, 'source': source})
-
-	# print an error if no blogpost article was found in DynamoDB
-	try:
-		x = 'found ' + str(countts) + ' stored blogs for ' + source + ' with title ' + str(tablefeed['Item']['title']) + '\n'
-		print(x)
-
-	except Exception as e:
-		x = 'could not find blogs for '+source + ' in dynamodb table. by default, only blog posts from the last ' + str(days_to_retrieve) + ' days are retrieved\n'	
-		print(x)
-
 	# check all the retrieved articles for published dates
 	for x in rssfeed['entries']:
 
@@ -272,11 +263,11 @@ def get_feed(f):
 			title = str(x['title'])
 
 			# retrieve the blogpost author if available
+			author = 'blank'
+
 			if x.has_key('author'):
 				author = str(x['author'])
-			else:
-				author = 'blank'
-
+			
 			# retrieve blogpost link			
 			print('retrieving '+str(title)+' in '+str(source)+' using url '+str(link)+'\n')
 			rawhtml, cleantxt = retrieve_url(link)
@@ -320,7 +311,7 @@ def get_feed(f):
 				print("skipped double guid " + guid + " " + source + " " + title + " " + datestr_post)
 
 
-# get the contents of the dynamodb table
+# get the contents of the dynamodb table for json object on S3
 @xray_recorder.capture("get_table")
 def get_table(source):
 	res = []

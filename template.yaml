@@ -73,7 +73,7 @@ Resources:
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
       Tracing: Active
-      ReservedConcurrentExecutions: 1
+      ReservedConcurrentExecutions: 2
       Layers: 
         - !Ref lambdalayer
 
