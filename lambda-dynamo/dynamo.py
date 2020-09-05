@@ -98,24 +98,6 @@ def read_feed():
 	return result, count
 
 
-# get the timestamp of the latest blogpost stored in DynamoDB
-def ts_dynamo(source):
-
-	# get timestamp from 30 days ago
-	now_ts = datetime.now()
-	old_ts = now_ts - timedelta(days = 30)
-	diff_ts = int(time.mktime(old_ts.timetuple()))
-
-	results	= ddb.query(KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
-	timest 	= ['0']
-
-	for x in results['Items']:
-		timest.append(x['timest'])
-
-	# return max timestamp and count of found items
-	return max(timest), len(timest) - 1
-
-
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
 def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post):
@@ -312,8 +294,10 @@ def get_feed(f):
 
 
 # get the contents of the dynamodb table for json object on S3
-@xray_recorder.capture("get_table")
-def get_table(source):
+@xray_recorder.capture("get_table_json")
+def get_table_json(source):
+
+	# create list for results and get current time
 	res = []
 	now_ts = datetime.now()
 
@@ -321,9 +305,16 @@ def get_table(source):
 	old_ts = now_ts - timedelta(days = 30)
 	diff_ts = int(time.mktime(old_ts.timetuple()))
 
-	# query the dynamodb table for recent blogposts
-	blogs = ddb.query(KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
-		
+	if source != 'all':
+
+		# query the dynamodb table for blogposts of a specific category from up to 30 days old
+		blogs = ddb.query(ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+			
+	else:
+
+		# query the dynamodb table for all category blogposts from up to 30 days old
+		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+
 	# iterate over the returned items
 	for a in blogs['Items']:
 		b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
@@ -333,8 +324,18 @@ def get_table(source):
 		# retrieve additional items if lastevaluatedkey was found 
 		while 'LastEvaluatedKey' in blogs:
 			lastkey = blogs['LastEvaluatedKey']
-			blogs = ddb.query(ExclusiveStartKey = lastkey, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+
+			if source != 'all':
+
+				# query the dynamodb table for blogposts of a specific category from up to 30 days old
+				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
+			else:
+
+				# query the dynamodb table for all category blogposts from up to 30 days old
+				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'source, timest, title, author, desc, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+
+
 			for a in blogs['Items']:
 				b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
 				b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['desc']).strip() + '", "author": "'+ a['author'] +'"}'
@@ -362,12 +363,16 @@ def cp_s3(source):
 # update json objects on S3 for single page web apps
 @xray_recorder.capture("update_json_s3")
 def update_json_s3(blog_queue):
+	
+	# add refresh of all blogposts if at least one category was triggered
+	if len(blog_queue) != 0:
+		blog_queue.append('all')
 
 	# update the json per blog
 	for blog in blog_queue:
 
 		# get the json content from DynamoDB
-		out = get_table(blog)
+		out = get_table_json(blog)
 
 		# create the json and return path
 		fpath = make_json(out, blog)
