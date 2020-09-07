@@ -100,11 +100,11 @@ def read_feed():
 
 # write the blogpost record into DynamoDB
 @xray_recorder.capture("put_dynamo")
-def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post):
+def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
-	if len(desc) == 0:
-		desc = '...'
+	if len(description) == 0:
+		description = '...'
 	
 	# put the record into dynamodb
 	ddb.put_item(
@@ -113,11 +113,11 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author
 			'timest' : timest_post,			# store the unix timestamp of the post
 			'datestr' : datestr_post,		# store the human friendly timestamp of the post
 			'title' : title,
-			'desc' : desc,					# store the short rss feed description of the content
+			'description' : description,	# store the short rss feed description of the content
 			'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
 			'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
 			'link' : link,
-			'source' : source,
+			'blogsource' : blogsource,
 			'author' : author,
 			'tag' : tags,
 			'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
@@ -128,7 +128,7 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, desc, link, source, author
 
 	# add dynamodb xray traces
 	xray_recorder.current_subsegment().put_annotation('ddbposturl', str(link))
-	xray_recorder.current_subsegment().put_annotation('ddbpostfields', str(str(timest_post)+' '+title+' '+desc+' '+link+' '+source+' '+author+' '+guid+' '+tags+' '+category))
+	xray_recorder.current_subsegment().put_annotation('ddbpostfields', str(str(timest_post)+' '+title+' '+description+' '+link+' '+blogsource+' '+author+' '+guid+' '+tags+' '+category))
 
 
 # retrieve the url of a blogpost
@@ -186,10 +186,10 @@ def comprehend(cleantxt, title):
 
 # send an email out whenever a new blogpost was found - this feature is optional
 @xray_recorder.capture("send_mail")
-def send_mail(recpt, title, source, author, rawhtml, link, datestr_post):
+def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
-	mailmsg = '<html><body><br><i>Posted by '+str(author)+' in ' +str(source) + ' blog on ' + str(datestr_post) + '</i><br><br>'
+	mailmsg = '<html><body><br><i>Posted by '+str(author)+' in ' +str(blogsource) + ' blog on ' + str(datestr_post) + '</i><br><br>'
 	mailmsg += '<a href="' + link + '">view post here</a><br><br>' + str(rawhtml) + '<br></body></html>'
 
 	# send the email using SES
@@ -198,7 +198,7 @@ def send_mail(recpt, title, source, author, rawhtml, link, datestr_post):
 		Destination = {'ToAddresses': [recpt]},
 		Message = {
 			'Subject': {
-				'Data': source.upper() + ' - ' + title
+				'Data': blogsource.upper() + ' - ' + title
 			},
 			'Body': {
 				'Html': {
@@ -208,7 +208,7 @@ def send_mail(recpt, title, source, author, rawhtml, link, datestr_post):
 		}
 	)
 	
-	print('sent email with subject ' + source.upper() + ' - ' + title + ' to ' + recpt)
+	print('sent email with subject ' + blogsource.upper() + ' - ' + title + ' to ' + recpt)
 
 
 # main function to kick off collection of an rss feed
@@ -217,7 +217,7 @@ def get_feed(f):
 
 	# set the url and source value of the blog
 	url = f[0]
-	source = f[1]
+	blogsource = f[1]
 
 	# get the rss feed
 	rssfeed = get_rss(url)
@@ -237,8 +237,8 @@ def get_feed(f):
 		if guid not in guids and (timest_now < timest_post + (86400 * days_to_retrieve)):
 
 			# add the blog source to the queue for updating json objects on S3
-			if source not in blog_queue:
-				blog_queue.append(source)
+			if blogsource not in blog_queue:
+				blog_queue.append(blogsource)
 
 			# retrieve other blog post values
 			link = str(x['link'])
@@ -251,7 +251,7 @@ def get_feed(f):
 				author = str(x['author'])
 			
 			# retrieve blogpost link			
-			print('retrieving '+str(title)+' in '+str(source)+' using url '+str(link)+'\n')
+			print('retrieving '+str(title)+' in '+str(blogsource)+' using url '+str(link)+'\n')
 			rawhtml, cleantxt = retrieve_url(link)
 
 			# discover tags with comprehend on html output
@@ -260,7 +260,7 @@ def get_feed(f):
 			# clean up blog post description text and remove unwanted characters (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
-			desc = r.sub('', str(des)).strip('&nbsp;')
+			description = r.sub('', str(des)).strip('&nbsp;')
 			
 			# submit the retrieved tag values discovered by comprehend to the list
 			category_tmp = []
@@ -275,27 +275,27 @@ def get_feed(f):
 			
 			# write the record to dynamodb, only if the guid is not present already. this prevents double posts from appearing by crossposting. 
 			if guid not in guids:
-				put_dynamo(str(timest_post), title, cleantxt, rawhtml, desc, link, source, author, guid, tags, category, datestr_post)
+				put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
 
 				# if sendemails enabled, generate the email message body for ses and send email
 				if os.environ['sendemails'] == 'y':
 
 					# get mail title and email recepient
-					mailt = source.upper()+' - '+title
+					mailt = blogsource.upper()+' - '+title
 					recpt = os.environ['toemail']
 
 					# send the email
-					send_mail(recpt, title, source, author, rawhtml, link, datestr_post)
+					send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post)
 
 			else:
 				
 				# skip, print message that a guid was found twice
-				print("skipped double guid " + guid + " " + source + " " + title + " " + datestr_post)
+				print("skipped double guid " + guid + " " + blogsource + " " + title + " " + datestr_post)
 
 
 # get the contents of the dynamodb table for json object on S3
 @xray_recorder.capture("get_table_json")
-def get_table_json(source):
+def get_table_json(blogsource):
 
 	# create list for results and get current time
 	res = []
@@ -305,40 +305,40 @@ def get_table_json(source):
 	old_ts = now_ts - timedelta(days = 30)
 	diff_ts = int(time.mktime(old_ts.timetuple()))
 
-	if source != 'all':
+	if blogsource != 'all':
 
 		# query the dynamodb table for blogposts of a specific category from up to 30 days old
-		blogs = ddb.query(ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
 			
 	else:
 
 		# query the dynamodb table for all category blogposts from up to 30 days old
-		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 	# iterate over the returned items
 	for a in blogs['Items']:
-		b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
-		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['desc']).strip() + '", "author": "'+ a['author'] +'"}'
+		b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
+		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['description']).strip() + '", "author": "'+ a['author'] +'"}'
 		res.append(b)
 	
 		# retrieve additional items if lastevaluatedkey was found 
 		while 'LastEvaluatedKey' in blogs:
 			lastkey = blogs['LastEvaluatedKey']
 
-			if source != 'all':
+			if blogsource != 'all':
 
 				# query the dynamodb table for blogposts of a specific category from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
 			else:
 
 				# query the dynamodb table for all category blogposts from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = '#src, timest, title, author, #dsc, link', ExpressionAttributeNames = {'#src': 'source', '#dsc': 'desc'}, KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 
 			for a in blogs['Items']:
-				b = '{"timest": "' + a['timest'] + '", "source": "' + a['source'] + '", "title": "' + a['title'] + '", "author": "' 
-				b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['desc']).strip() + '", "author": "'+ a['author'] +'"}'
+				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
+				b += a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "'+ a['author'] +'"}'
 				res.append(b)
 
 	# sort the json file by timestamp in reverse
@@ -349,12 +349,12 @@ def get_table_json(source):
 
 # copy the file to s3 with a public acl
 @xray_recorder.capture("cp_s3")
-def cp_s3(source):
+def cp_s3(blogsource):
 
 	s3.put_object(
 		Bucket = os.environ['s3bucket'], 
-		Body = open('/tmp/' + source + '.json', 'rb'), 
-		Key = source + '.json', 
+		Body = open('/tmp/' + blogsource + '.json', 'rb'), 
+		Key = blogsource + '.json', 
 		ACL = 'public-read',
 		CacheControl = 'public, max-age=3600'
 	)
@@ -385,9 +385,9 @@ def update_json_s3(blog_queue):
 
 # create a json file
 @xray_recorder.capture("make_json")
-def make_json(content, source):
+def make_json(content, blogsource):
 
-	fpath = '/tmp/' + source + '.json'
+	fpath = '/tmp/' + blogsource + '.json'
 
 	# write the json raw output to /tmp/
 	jsonf = open(fpath, 'w')
@@ -424,8 +424,8 @@ def handler(event, context):
 	feeds, thr = read_feed()
 
 	# submit a thread per url feed to queue 
-	for source, url in feeds.items():
-		q1.put([url, source])
+	for blogsource, url in feeds.items():
+		q1.put([url, blogsource])
 
 	# start thread per feed
 	for x in range(thr):

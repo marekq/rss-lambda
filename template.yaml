@@ -94,14 +94,14 @@ Resources:
     Type: 'AWS::DynamoDB::Table'
     Properties:
       AttributeDefinitions:
-      - AttributeName: source
+      - AttributeName: blogsource
         AttributeType: S
       - AttributeName: timest
         AttributeType: S
       - AttributeName: visible
         AttributeType: S
       KeySchema:
-      - AttributeName: source
+      - AttributeName: blogsource
         KeyType: HASH
       - AttributeName: timest
         KeyType: RANGE  
