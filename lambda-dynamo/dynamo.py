@@ -36,7 +36,7 @@ def get_guids(ts):
 	guids = []
 
 	# get the guid values up to x days ago
-	queryres = ddb.query(IndexName = 'timest', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+	queryres = ddb.query(IndexName = 'timest', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
 
 	for x in queryres['Items']:
 		if 'guid' in x:
@@ -45,7 +45,7 @@ def get_guids(ts):
 
 	# paginate the query in case more than 100 results are returned
 	while 'LastEvaluatedKey' in queryres:
-		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], IndexName = 'timest', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], IndexName = 'timest', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
 
 		for x in queryres['Items']:
 			if 'guid' in x:
@@ -307,17 +307,17 @@ def get_table_json(blogsource):
 	if blogsource != 'all':
 
 		# query the dynamodb table for blogposts of a specific category from up to 30 days old
-		blogs = ddb.query(ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
 			
 	else:
 
 		# query the dynamodb table for all category blogposts from up to 30 days old
-		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 	# iterate over the returned items
 	for a in blogs['Items']:
-		b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
-		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
+		b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "datestr": "' + a['datestr'] + '", '
+		b += '"author": "' + a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
 		res.append(str(b))
 	
 		# retrieve additional items if lastevaluatedkey was found 
@@ -327,17 +327,17 @@ def get_table_json(blogsource):
 			if blogsource != 'all':
 
 				# query the dynamodb table for blogposts of a specific category from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
 			else:
 
 				# query the dynamodb table for all category blogposts from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 
 			for a in blogs['Items']:
-				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
-				b += a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "'+ a['author'] + '"}'
+				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "datestr": "' + a['datestr'] + '", '
+				b += '"author": "' + a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
 				res.append(str(b))
 
 	# sort the json file by timestamp in reverse
