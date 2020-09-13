@@ -2,7 +2,7 @@
 # @marekq
 # www.marek.rocks
 
-import base64, botocore, boto3, csv, fake_useragent, feedparser
+import base64, botocore, boto3, csv, feedparser
 import gzip, json, os, re, readability, requests
 import queue, sys, threading, time
 
@@ -135,18 +135,17 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 @xray_recorder.capture("retrieveurl")
 def retrieve_url(url):
 
-	# get a "real" user agent
-	ua = fake_useragent.UserAgent()
-	chrome = ua.chrome
+	# set a "real" user agent
+	firefox = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0"
 
 	# retrieve the main text section from the url using the readability module and using the Chrome user agent
-	req = requests.get(url, headers = {'User-Agent' : chrome})
+	req = requests.get(url, headers = {'User-Agent' : firefox})
 	doc = readability.Document(req.text)
 	rawhtml = doc.summary(html_partial = True)
 
 	# remove any html tags from output
 	soup = BeautifulSoup(rawhtml, 'html.parser')
-	cleantext = soup.get_text().encode('utf-8')
+	cleantext = soup.get_text().strip('\n').encode('utf-8')
 
 	return str(rawhtml), str(cleantext)
 
@@ -260,7 +259,7 @@ def get_feed(f):
 			# clean up blog post description text and remove unwanted characters (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
-			description = r.sub('', str(des)).strip('&nbsp;')
+			description = r.sub('', str(des)).strip('&nbsp;').replace('\"', "'").strip('\n')
 			
 			# submit the retrieved tag values discovered by comprehend to the list
 			category_tmp = []
@@ -318,8 +317,8 @@ def get_table_json(blogsource):
 	# iterate over the returned items
 	for a in blogs['Items']:
 		b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
-		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['description']).strip() + '", "author": "'+ a['author'] +'"}'
-		res.append(b)
+		b += a['author'] + '", "link": "' + a['link'] + '", "desc": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
+		res.append(str(b))
 	
 		# retrieve additional items if lastevaluatedkey was found 
 		while 'LastEvaluatedKey' in blogs:
@@ -338,8 +337,8 @@ def get_table_json(blogsource):
 
 			for a in blogs['Items']:
 				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "author": "' 
-				b += a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "'+ a['author'] +'"}'
-				res.append(b)
+				b += a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "'+ a['author'] + '"}'
+				res.append(str(b))
 
 	# sort the json file by timestamp in reverse
 	out = sorted(res, reverse = True)
@@ -356,7 +355,7 @@ def cp_s3(blogsource):
 		Body = open('/tmp/' + blogsource + '.json', 'rb'), 
 		Key = blogsource + '.json', 
 		ACL = 'public-read',
-		CacheControl = 'public, max-age=3600'
+		CacheControl = 'public, max-age=180'
 	)
 
 
@@ -368,8 +367,9 @@ def update_json_s3(blog_queue):
 	if len(blog_queue) != 0:
 		blog_queue.append('all')
 
-	# update the json per blog
-	for blog in blog_queue:
+	# update the json per blog - temporary disabled
+	#for blog in blog_queue:
+	for blog in ['all']:
 
 		# get the json content from DynamoDB
 		out = get_table_json(blog)
@@ -390,17 +390,15 @@ def make_json(content, blogsource):
 	fpath = '/tmp/' + blogsource + '.json'
 
 	# write the json raw output to /tmp/
-	jsonf = open(fpath, 'w')
-	jsonf.write('{"content":')
-	jsonf.write(str(content).replace("'", "").replace("\\", ""))
-	jsonf.write('}')
+	fname = open(fpath, 'w')
+	fname.write('[')
 
-	# write the json gz output to /tmp
-	gzipf = gzip.GzipFile(fpath + '.gz', 'w')
-	gzipf.write('{"content":'.encode('utf-8') )
-	gzipf.write(str(content).replace("'", "").replace("\\", "").encode('utf-8') )
-	gzipf.write('}'.encode('utf-8') )
-	gzipf.close()
+	res = ''
+	for blog in content:
+		res += blog.replace('\n', '') + ', \n'
+
+	fname.write(res [:-4])
+	fname.write('}]')
 
 	print('wrote to ' + fpath)
 
@@ -409,7 +407,7 @@ def make_json(content, blogsource):
 @xray_recorder.capture("handler")
 def handler(event, context): 
 	
-	# get the unix timestamp from 3 days ago from now
+	# get the unix timestamp from variable 'days_to_retrieve'
 	ts_old = int(time.time()) - (86400 * days_to_retrieve)
 
 	# get post guids stored in dynamodb

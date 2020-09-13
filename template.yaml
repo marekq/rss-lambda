@@ -73,7 +73,7 @@ Resources:
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
       Tracing: Active
-      ReservedConcurrentExecutions: 2
+      ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
 
@@ -86,7 +86,7 @@ Resources:
       CompatibleRuntimes:
         - python3.8
       LicenseInfo: 'MIT-0'
-      RetentionPolicy: Retain
+      RetentionPolicy: Delete
     Metadata:
       BuildMethod: python3.8
 
