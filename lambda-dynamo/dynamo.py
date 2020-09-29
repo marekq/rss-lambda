@@ -239,9 +239,9 @@ def get_feed(f):
 			if blogsource not in blog_queue:
 				blog_queue.append(blogsource)
 
-			# retrieve other blog post values
+			# retrieve other blog post values, remove double quotes from title
 			link = str(x['link'])
-			title = str(x['title'])
+			title = str(x['title']).replace('\"', "'")
 
 			# retrieve the blogpost author if available
 			author = 'blank'
@@ -256,7 +256,7 @@ def get_feed(f):
 			# discover tags with comprehend on html output
 			tags = comprehend(cleantxt, title)	
 
-			# clean up blog post description text and remove unwanted characters (this can be improved further)
+			# clean up blog post description text and remove unwanted characters such as double quotes and spaces (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
 			description = r.sub('', str(des)).strip('&nbsp;').replace('\"', "'").strip('\n')
@@ -334,8 +334,9 @@ def get_table_json(blogsource):
 				# query the dynamodb table for all category blogposts from up to 30 days old
 				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
-
+			# add an entry per blog to the output list
 			for a in blogs['Items']:
+
 				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "datestr": "' + a['datestr'] + '", '
 				b += '"author": "' + a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
 				res.append(str(b))
