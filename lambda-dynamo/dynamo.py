@@ -241,7 +241,7 @@ def get_feed(f):
 
 			# retrieve other blog post values, remove double quotes from title
 			link = str(x['link'])
-			title = str(x['title']).replace('\"', "'")
+			title = str(x['title']).replace('"', "'")
 
 			# retrieve the blogpost author if available
 			author = 'blank'
@@ -259,7 +259,7 @@ def get_feed(f):
 			# clean up blog post description text and remove unwanted characters such as double quotes and spaces (this can be improved further)
 			des	= str(x['description'])
 			r = re.compile(r'<[^>]+>')
-			description = r.sub('', str(des)).strip('&nbsp;').replace('\"', "'").strip('\n')
+			description = r.sub('', str(des)).strip('&nbsp;').replace('"', "'").strip('\n')
 			
 			# submit the retrieved tag values discovered by comprehend to the list
 			category_tmp = []
