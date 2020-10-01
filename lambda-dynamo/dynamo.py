@@ -356,7 +356,8 @@ def cp_s3(blogsource):
 		Body = open('/tmp/' + blogsource + '.json', 'rb'), 
 		Key = blogsource + '.json', 
 		ACL = 'public-read',
-		CacheControl = 'public, max-age=180'
+		CacheControl = 'public',
+		ContentType = 'application/json'
 	)
 
 
