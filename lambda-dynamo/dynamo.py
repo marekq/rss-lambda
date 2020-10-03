@@ -296,55 +296,97 @@ def get_feed(f):
 @xray_recorder.capture("get_table_json")
 def get_table_json(blogsource):
 
-	# create list for results and get current time
-	res = []
+	# create a list for found guids from s3 json
+	s3guids = []
+
+	# check if the s3 object exists by listing current s3 objects
+	s3files = []
+	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
+
+	# iterate over present files in s3
+	for x in s3list['Contents']:
+		s3files.append(x['Key'])
+
+	# if the blog json is available on s3
+	if str(blogsource + '.json') in s3files:
+		
+		# since there is a json present, retrieve the blog contents from there and update only 1 days of blogposts from dynamodb
+		# this reduces the read capacity consumed by dynamodb on a file update
+		days_to_get = 1
+
+		# retrieve the object from s3
+		s3obj = s3.get_object(Bucket = os.environ['s3bucket'], Key = blogsource + '.json')
+		
+		# create list for results from json
+		res = json.loads(s3obj['Body'].read())
+
+		# add guids from json file to s3guids list
+		for s3file in res:
+			s3guids.append(s3file['guid'])
+
+	# if the blog json does not exist on s3
+	else:
+		
+		# set the days to retrieve value based on the given setting
+		days_to_get = days_to_retrieve
+
+		# since the previous results can not be found, create an emptylist for results and get current time
+		res = []
+
+	# get the current timestamp
 	now_ts = datetime.now()
 
-	# get timestamp from 30 days ago
-	old_ts = now_ts - timedelta(days = 30)
+	# get timestamp based on days_to_retrieve 
+	old_ts = now_ts - timedelta(days = days_to_get)
 	diff_ts = int(time.mktime(old_ts.timetuple()))
 
 	if blogsource != 'all':
 
-		# query the dynamodb table for blogposts of a specific category from up to 30 days old
-		blogs = ddb.query(ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
+		# query the dynamodb table for blogposts of a specific category from up to 1 day ago
+		blogs = ddb.query(ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
 			
 	else:
 
-		# query the dynamodb table for all category blogposts from up to 30 days old
-		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+		# query the dynamodb table for all category blogposts from up to 1 day ago
+		blogs = ddb.query(IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 	# iterate over the returned items
 	for a in blogs['Items']:
-		b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "datestr": "' + a['datestr'] + '", '
-		b += '"author": "' + a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
-		res.append(str(b))
-	
+
+		# if guid not present in s3 json file
+		if a['guid'] not in s3guids:
+
+			b = {'timest': a['timest'], 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+			
+			# add the json object to the result list
+			res.append(b)
+
 		# retrieve additional items if lastevaluatedkey was found 
 		while 'LastEvaluatedKey' in blogs:
 			lastkey = blogs['LastEvaluatedKey']
 
 			if blogsource != 'all':
 
-				# query the dynamodb table for blogposts of a specific category from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
+				# query the dynamodb table for blogposts of a specific category 
+				blogs = ddb.query(ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('source').eq(source) & Key('timest').gt(str(diff_ts)))
 			
 			else:
 
 				# query the dynamodb table for all category blogposts from up to 30 days old
-				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(ExclusiveStartKey = lastkey, IndexName = 'timest', ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
 
 			# add an entry per blog to the output list
 			for a in blogs['Items']:
+				
+				# if guid not present in s3 json file
+				if a['guid'] not in s3guids:
 
-				b = '{"timest": "' + a['timest'] + '", "blogsource": "' + a['blogsource'] + '", "title": "' + a['title'] + '", "datestr": "' + a['datestr'] + '", '
-				b += '"author": "' + a['author'] + '", "link": "' + a['link'] + '", "description": "' + str(a['description']).strip() + '", "author": "' + a['author'] +'"}'
-				res.append(str(b))
+					b = {'timest': a['timest'], 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+					
+					# add the json object to the result list
+					res.append(b)
 
-	# sort the json file by timestamp in reverse
-	out = sorted(res, reverse = True)
-
-	return out
+	return res
 
 
 # copy the file to s3 with a public acl
@@ -369,38 +411,34 @@ def update_json_s3(blog_queue):
 	if len(blog_queue) != 0:
 		blog_queue.append('all')
 
-	# update the json per blog - temporary disabled
-	#for blog in blog_queue:
-	for blog in ['all']:
-
 		# get the json content from DynamoDB
-		out = get_table_json(blog)
+		out = get_table_json('all')
 
-		# create the json and return path
-		fpath = make_json(out, blog)
+		# update the json per blog
+		for blog in blog_queue:
+		
+			# create the json and return path
+			make_json(out, blog)
 
-		# upload the json to s3
-		cp_s3(blog)
-
-		print('updated '+ blog + ' blog')
+			# upload the json to s3
+			cp_s3(blog)
 
 
-# create a json file
+# create a json file from blog content
 @xray_recorder.capture("make_json")
 def make_json(content, blogsource):
-
+	
+	# write the json file to /tmp/
 	fpath = '/tmp/' + blogsource + '.json'
 
-	# write the json raw output to /tmp/
-	fname = open(fpath, 'w')
-	fname.write('[')
+	filteredcontent = []
 
-	res = ''
 	for blog in content:
-		res += blog.replace('\n', '') + ', \n'
+		if blog['blogsource'] == blogsource or blogsource == 'all':
+			filteredcontent.append(blog)
 
-	fname.write(res [:-4])
-	fname.write('}]')
+	with open(fpath, "w") as outfile: 
+		json.dump(filteredcontent, outfile) 
 
 	print('wrote to ' + fpath)
 
