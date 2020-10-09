@@ -51,6 +51,7 @@ Resources:
                 - 'ses:SendEmail'
               Resource: '*'
         - ComprehendFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
         - S3WritePolicy:
@@ -76,6 +77,7 @@ Resources:
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:2"
 
   lambdalayer:
     Type: AWS::Serverless::LayerVersion

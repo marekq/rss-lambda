@@ -5,7 +5,7 @@ Monitor your favourite blogs through RSS and get a notification whenever a new b
 
 You can extend the blog scraper by adding your own RSS feeds to monitor. By default various AWS related feeds are included, but you can add any of your own feeds in the *lambda-dynamo/feeds.txt* file. Within the DynamoDB table that is deployed, you can find various details about the blogposts and also the text or html versions of the content. This can be helpful in case you are building your own feed scraper or notification service. 
 
-Optionally, a JSON output for every blog category can be uploaded as a public S3 object. These files can be included in a single page app, such as the one at https://blog.marek.rocks . The output will be compressed using 'brotli' or something similar later in the future to save on S3 storage and bandwidth costs. 
+Optionally, a JSON output for every blog category can be uploaded as a public S3 object. These files can be included in a single page app, such as the one at https://marek.rocks . The output will be compressed using 'brotli' or something similar later in the future to save on S3 storage and bandwidth costs. 
 
 Finally, the feed retrieval feature uses a "readability" library which works similarly to the "Reader View" function of the Apple Safari browser. This makes it convenient to read the full text of a blogpost in your email client or on mobile. All of the links, images and text markup is preserved. 
 
@@ -38,7 +38,8 @@ Roadmap
 -------
 
 - [ ] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
-- [ ] Optimize Lambda memory and timeout settings to lower cost. 
+- [X] Add Lambda Extension to monitor network and CPU usage of the RSS function. 
+- [X] Optimize Lambda memory and timeout settings to lower cost. 
 - [X] Add "smart" extraction of the full blogpost text from the post URL, so that the full content of a post can be stored in DynamoDB or sent through e-mail.
 - [X] Add generation of JSON files with blogposts to S3 for easier inclusion in a single page app (i.e. deployed using Amplify or Netlify).
 - [X] Add support for retrieval of non AWS blogposts using RSS.
