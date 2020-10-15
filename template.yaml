@@ -31,7 +31,7 @@ Parameters:
   
   DaysToRetrieve:
     Description: Configure how far to look back in time while retrieving blogposts, default 3 days
-    Default: 3
+    Default: 1
     Type: Number
 
 Resources:
@@ -62,7 +62,7 @@ Resources:
         Schedule1:
           Type: Schedule
           Properties:
-            Schedule: rate(10 minutes)
+            Schedule: rate(5 minutes)
       Environment:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
