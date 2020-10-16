@@ -5,16 +5,16 @@ Description: An AWS Serverless Specification template describing your function.
 Parameters:
   SourceEmail:
     Type: String
-    Description: The sending email address for notification emails
+    Description: The sending email address for notification emails.
     Default: aws@marek.rocks
 
   DestEmail:
     Type: String
-    Description: The receiving email address for notification emails
+    Description: The receiving email address for notification emails.
     Default: marek.kuczynski@gmail.com
 
   SendEmails: 
-    Description: Set whether to send SES emails or not (default disabled). 
+    Description: Set whether to send SES emails or not (default 'n'). 
     Default: 'n'
     Type: String
     AllowedValues: 
@@ -22,7 +22,7 @@ Parameters:
       - 'n'
 
   StorePublicS3:
-    Description: Store a JSON object of blogposts as a public S3 file (default disabled).
+    Description: Store a JSON object of blogposts as a public S3 file (default 'n').
     Default: 'n'
     Type: String
     AllowedValues:
@@ -30,8 +30,8 @@ Parameters:
       - 'n'
   
   DaysToRetrieve:
-    Description: Configure how far to look back in time while retrieving blogposts, default 3 days
-    Default: 1
+    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '30' days. 
+    Default: 30
     Type: Number
 
 Resources:
@@ -73,6 +73,8 @@ Resources:
           daystoretrieve: !Ref DaysToRetrieve
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
+          POWERTOOLS_SERVICE_NAME: rssaws
+          POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
       Layers: 

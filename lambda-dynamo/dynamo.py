@@ -6,14 +6,17 @@ import base64, botocore, boto3, csv, feedparser
 import gzip, json, os, re, readability, requests
 import queue, sys, threading, time
 
+from aws_lambda_powertools import Logger, Metrics, Tracer
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
-from aws_xray_sdk.core import xray_recorder
-from aws_xray_sdk.core import patch_all
+modules_to_be_patched = ["boto3", "requests"]
+tracer = Tracer(patch_modules = modules_to_be_patched)
 
-patch_all()
+logger = Logger()
+tracer = Tracer()
+metrics = Metrics()
 
 
 # set how many days of feeds to retrieve blogpost based on environment variable
@@ -31,7 +34,6 @@ q1 = queue.Queue()
 
 
 # get the blogpost guids that are already stored in DynamoDB table
-@xray_recorder.capture("get_guids")
 def get_guids(ts):
 	guids = []
 
@@ -52,8 +54,6 @@ def get_guids(ts):
 				if x['guid'] not in guids:
 					guids.append(x['guid'])
 
-	xray_recorder.current_subsegment().put_annotation('postcountguid', str(len(guids)))
-
 	print('guids found in last ' + str(days_to_retrieve) + ' days : '+str(len(guids)))
 	return guids
 
@@ -66,13 +66,11 @@ def worker():
 
 
 # get the RSS feed through feedparser
-@xray_recorder.capture("get_rss")
 def get_rss(url):
 	return feedparser.parse(url)
 
 
 # read the url's from 'feeds.txt' stored in the lambda function
-@xray_recorder.capture("read_feed")
 def read_feed():
 	result = {}
 	filen = 'feeds.txt'
@@ -99,7 +97,6 @@ def read_feed():
 
 
 # write the blogpost record into DynamoDB
-@xray_recorder.capture("put_dynamo")
 def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
@@ -126,13 +123,8 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 			'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		})
 
-	# add dynamodb xray traces
-	xray_recorder.current_subsegment().put_annotation('ddbposturl', str(link))
-	xray_recorder.current_subsegment().put_annotation('ddbpostfields', str(str(timest_post)+' '+title+' '+description+' '+link+' '+blogsource+' '+author+' '+guid+' '+tags+' '+category))
-
 
 # retrieve the url of a blogpost
-@xray_recorder.capture("retrieveurl")
 def retrieve_url(url):
 
 	# set a "real" user agent
@@ -151,7 +143,6 @@ def retrieve_url(url):
 
 
 # analyze the text of a blogpost using the AWS Comprehend service
-@xray_recorder.capture("comprehend")
 def comprehend(cleantxt, title):
 	detections = []
 	found = False
@@ -184,7 +175,6 @@ def comprehend(cleantxt, title):
 
 
 # send an email out whenever a new blogpost was found - this feature is optional
-@xray_recorder.capture("send_mail")
 def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
@@ -211,7 +201,6 @@ def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 
 # main function to kick off collection of an rss feed
-@xray_recorder.capture("get_feed")
 def get_feed(f):
 
 	# set the url and source value of the blog
@@ -293,7 +282,6 @@ def get_feed(f):
 
 
 # get the contents of the dynamodb table for json object on S3
-@xray_recorder.capture("get_table_json")
 def get_table_json(blogsource):
 
 	# create a list for found guids from s3 json
@@ -390,7 +378,6 @@ def get_table_json(blogsource):
 
 
 # copy the file to s3 with a public acl
-@xray_recorder.capture("cp_s3")
 def cp_s3(blogsource):
 
 	s3.put_object(
@@ -404,7 +391,6 @@ def cp_s3(blogsource):
 
 
 # update json objects on S3 for single page web apps
-@xray_recorder.capture("update_json_s3")
 def update_json_s3(blog_queue):
 	
 	# add refresh of all blogposts if at least one category was triggered
@@ -425,7 +411,6 @@ def update_json_s3(blog_queue):
 
 
 # create a json file from blog content
-@xray_recorder.capture("make_json")
 def make_json(content, blogsource):
 	
 	# write the json file to /tmp/
@@ -444,11 +429,13 @@ def make_json(content, blogsource):
 
 
 # lambda handler
-@xray_recorder.capture("handler")
+@metrics.log_metrics(capture_cold_start_metric=True)
+@logger.inject_lambda_context(log_event=True)
+@tracer.capture_lambda_handler
 def handler(event, context): 
 	
-	# get the unix timestamp from variable 'days_to_retrieve'
-	ts_old = int(time.time()) - (86400 * days_to_retrieve)
+	# get the unix timestamp from one day ago
+	ts_old = int(time.time()) - 86400
 
 	# get post guids stored in dynamodb
 	global guids
