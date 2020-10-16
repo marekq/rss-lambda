@@ -54,7 +54,7 @@ def get_guids(ts):
 				if x['guid'] not in guids:
 					guids.append(x['guid'])
 
-	print('guids found in last ' + str(days_to_retrieve) + ' days : '+str(len(guids)))
+	print('guids found in last day : '+str(len(guids)))
 	return guids
 
 
@@ -97,6 +97,7 @@ def read_feed():
 
 
 # write the blogpost record into DynamoDB
+@tracer.capture_method(capture_response = False)
 def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
@@ -125,6 +126,7 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 
 
 # retrieve the url of a blogpost
+@tracer.capture_method(capture_response = False)
 def retrieve_url(url):
 
 	# set a "real" user agent
@@ -175,6 +177,7 @@ def comprehend(cleantxt, title):
 
 
 # send an email out whenever a new blogpost was found - this feature is optional
+@tracer.capture_method(capture_response = False)
 def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
@@ -201,6 +204,7 @@ def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 
 # main function to kick off collection of an rss feed
+@tracer.capture_method(capture_response = False)
 def get_feed(f):
 
 	# set the url and source value of the blog
@@ -282,6 +286,7 @@ def get_feed(f):
 
 
 # get the contents of the dynamodb table for json object on S3
+@tracer.capture_method(capture_response = False)
 def get_table_json(blogsource):
 
 	# create a list for found guids from s3 json
@@ -429,8 +434,8 @@ def make_json(content, blogsource):
 
 
 # lambda handler
-@metrics.log_metrics(capture_cold_start_metric=True)
-@logger.inject_lambda_context(log_event=True)
+@metrics.log_metrics(capture_cold_start_metric = True)
+@logger.inject_lambda_context(log_event = True)
 @tracer.capture_lambda_handler
 def handler(event, context): 
 	

@@ -30,8 +30,8 @@ Parameters:
       - 'n'
   
   DaysToRetrieve:
-    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '30' days. 
-    Default: 30
+    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '3' days. 
+    Default: 3
     Type: Number
 
 Resources:
@@ -57,7 +57,7 @@ Resources:
         - S3WritePolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 1024
-      Timeout: 30
+      Timeout: 60
       Events:
         Schedule1:
           Type: Schedule
