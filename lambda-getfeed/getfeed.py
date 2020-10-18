@@ -6,7 +6,7 @@ import base64, botocore, boto3, csv, feedparser
 import gzip, json, os, re, readability, requests
 import queue, sys, threading, time
 
-from aws_lambda_powertools import Logger, Metrics, Tracer
+from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key, Attr
 from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
@@ -16,7 +16,6 @@ tracer = Tracer(patch_modules = modules_to_be_patched)
 
 logger = Logger()
 tracer = Tracer()
-metrics = Metrics()
 
 
 # set how many days of feeds to retrieve blogpost based on environment variable
@@ -29,71 +28,10 @@ ses = boto3.client('ses')
 s3 = boto3.client('s3')
 
 
-# create a queue for multiprocessing
-q1 = queue.Queue()
-
-
-# get the blogpost guids that are already stored in DynamoDB table
-def get_guids(ts):
-	guids = []
-
-	# get the guid values up to x days ago
-	queryres = ddb.query(ScanIndexForward = True, IndexName = 'timest', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
-
-	for x in queryres['Items']:
-		if 'guid' in x:
-			if x['guid'] not in guids:
-				guids.append(x['guid'])
-
-	# paginate the query in case more than 100 results are returned
-	while 'LastEvaluatedKey' in queryres:
-		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], ScanIndexForward = True, IndexName = 'timest', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
-
-		for x in queryres['Items']:
-			if 'guid' in x:
-				if x['guid'] not in guids:
-					guids.append(x['guid'])
-
-	print('guids found in last day : '+str(len(guids)))
-	return guids
-
-
-# worker for queue jobs
-def worker():
-	while not q1.empty():
-		get_feed(q1.get())
-		q1.task_done()
-
-
 # get the RSS feed through feedparser
+@tracer.capture_method(capture_response = False)
 def get_rss(url):
 	return feedparser.parse(url)
-
-
-# read the url's from 'feeds.txt' stored in the lambda function
-def read_feed():
-	result = {}
-	filen = 'feeds.txt'
-	count = 0
-
-	# open the feeds.txt file and read line by line
-	with open(filen) as fp:
-		line = fp.readline()
-		while line:
-
-			# get the src and url value delimited by a ','
-			src, url = line.split(',')
-
-			# add src and url to dict
-			result[src.strip()] = url.strip()
-			line = fp.readline()
-
-			# add one to the count if less than 50, else we will spawn too many threads
-			if count < 50:
-				count += 1
-
-	# return the result and count value
-	return result, count
 
 
 # write the blogpost record into DynamoDB
@@ -145,6 +83,7 @@ def retrieve_url(url):
 
 
 # analyze the text of a blogpost using the AWS Comprehend service
+@tracer.capture_method(capture_response = False)
 def comprehend(cleantxt, title):
 	detections = []
 	found = False
@@ -205,11 +144,9 @@ def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 # main function to kick off collection of an rss feed
 @tracer.capture_method(capture_response = False)
-def get_feed(f):
+def get_feed(url, blogsource, guids):
 
-	# set the url and source value of the blog
-	url = f[0]
-	blogsource = f[1]
+	blogudate = False
 
 	# get the rss feed
 	rssfeed = get_rss(url)
@@ -227,10 +164,6 @@ def get_feed(f):
 
 		# if the post guid is not found in dynamodb and newer than the specified amount of days, retrieve the record
 		if guid not in guids and (timest_now < timest_post + (86400 * days_to_retrieve)):
-
-			# add the blog source to the queue for updating json objects on S3
-			if blogsource not in blog_queue:
-				blog_queue.append(blogsource)
 
 			# retrieve other blog post values, remove double quotes from title
 			link = str(x['link'])
@@ -267,6 +200,11 @@ def get_feed(f):
 			
 			# write the record to dynamodb, only if the guid is not present already. this prevents double posts from appearing by crossposting. 
 			if guid not in guids:
+
+				# update the blogpost
+				blogudate = True
+
+				# put record to dynamodb
 				put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
 
 				# if sendemails enabled, generate the email message body for ses and send email
@@ -283,6 +221,36 @@ def get_feed(f):
 				
 				# skip, print message that a guid was found twice
 				print("skipped double guid " + guid + " " + blogsource + " " + title + " " + datestr_post)
+
+	return blogudate
+
+
+# check if new items were uploaded to s3
+@tracer.capture_method(capture_response = False)
+def get_s3_json_age():
+
+	# set variable for s3 object age
+	newer_than_1_min = False
+
+	# list objects in s3
+	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
+
+	# iterate over present files in s3
+	for s3file in s3list['Contents']:
+
+		# get last modified time of item
+		s3time = s3file['LastModified']
+
+		objtime = int(time.mktime(s3time.timetuple()))
+		nowtime = int(time.time())
+		difftime = nowtime - objtime
+
+		if difftime < 60:
+			newer_than_1_min = True
+	
+		print(str(difftime) + " " + str(s3file['Key']))
+
+	return newer_than_1_min
 
 
 # get the contents of the dynamodb table for json object on S3
@@ -325,6 +293,8 @@ def get_table_json(blogsource):
 
 		# since the previous results can not be found, create an emptylist for results and get current time
 		res = []
+
+		print('could not find ' + blogsource + '.json file on s3')
 
 	# get the current timestamp
 	now_ts = datetime.now()
@@ -383,6 +353,7 @@ def get_table_json(blogsource):
 
 
 # copy the file to s3 with a public acl
+@tracer.capture_method(capture_response = False)
 def cp_s3(blogsource):
 
 	s3.put_object(
@@ -396,23 +367,17 @@ def cp_s3(blogsource):
 
 
 # update json objects on S3 for single page web apps
-def update_json_s3(blog_queue):
-	
-	# add refresh of all blogposts if at least one category was triggered
-	if len(blog_queue) != 0:
-		blog_queue.append('all')
+@tracer.capture_method(capture_response = False)
+def update_json_s3(blog):
 
-		# get the json content from DynamoDB
-		out = get_table_json('all')
+	# get the json content from DynamoDB
+	out = get_table_json(blog)
 
-		# update the json per blog
-		for blog in blog_queue:
-		
-			# create the json and return path
-			make_json(out, blog)
+	# create the json and return path
+	make_json(out, blog)
 
-			# upload the json to s3
-			cp_s3(blog)
+	# upload the json to s3
+	cp_s3(blog)
 
 
 # create a json file from blog content
@@ -434,36 +399,31 @@ def make_json(content, blogsource):
 
 
 # lambda handler
-@metrics.log_metrics(capture_cold_start_metric = True)
 @logger.inject_lambda_context(log_event = True)
 @tracer.capture_lambda_handler
 def handler(event, context): 
 	
-	# get the unix timestamp from one day ago
-	ts_old = int(time.time()) - 86400
+	print(event)
 
-	# get post guids stored in dynamodb
-	global guids
-	guids = get_guids(ts_old)
+	# if updating all blogposts, skip blogpost retrieval
+	if event['msg'] == 'all':
+		blogsource = 'all'
+		blogupdate = get_s3_json_age()
 
-	# create list to store queues with new blogs
-	global blog_queue
-	blog_queue = []
+		# if new blogposts found, update json on s3
+		if blogupdate:
+			print('updating json output on s3')
+			update_json_s3(blogsource)
 
-	# get feed url's from local feeds.txt file
-	feeds, thr = read_feed()
+	else:
 
-	# submit a thread per url feed to queue 
-	for blogsource, url in feeds.items():
-		q1.put([url, blogsource])
+		# get submitted values from blog to retrieve
+		url = event['msg']['url']
+		ts = event['msg']['ts']
+		blogsource = event['msg']['blogsource']
+		guids = event['guids']
 
-	# start thread per feed
-	for x in range(thr):
-		t = threading.Thread(target = worker)
-		t.daemon = True
-		t.start()
-	q1.join()
+		# get feed and whether an update to s3 is required
+		blogupdate = get_feed(url, blogsource, guids)
 
-	# update the json files on s3 for updated sources
-	if os.environ['storepublics3'] == 'y':
-		update_json_s3(blog_queue)
+	return blogsource, blogupdate

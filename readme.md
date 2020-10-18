@@ -19,6 +19,12 @@ The following fields are stored in DynamoDB per blog article. In the screenshot,
 ![alt text](./docs/dynamodb.png)
 
 
+Finally, the following State Machine is created to retrieve blog posts;
+
+
+![alt text](./docs/statemachine.png)
+
+
 Installation
 ------------
 
@@ -27,17 +33,16 @@ Installation
 - Run 'bash deploy.sh' to deploy the stack. If the 'samconfig.toml' file is not present, you will have to enter the stack details manually. 
 - If you optionally select to use email notifications using SES, you will need to ensure that you have the SES sender and email address preconfigured in your account. There is unfortunately no simple way to provision this using SAM. 
 
-
-Note: the 'rssdynamo' function is configured with 1GB of memory and a timeout of 30 seconds. On the initial invocation, the function will need to retrieve records from the last 72 hours and may run for up to 20-30 seconds. After the table is populated, the timeout setting can be drastically reduced, which is a best practice to prevent any unneccesary costs. 
-
-
-If time allows, this will be replaced with an Express Step Function in the future, which will allow for lower default values and better visibility over the process. A Lambda concurrency limit of 2 is set for the Lambda to prevent a high amount of parallel invocations running.
+You can now run the Step Function to trigger the blog refresh. The URL to find the Step Function is given as an output value of the CloudFormation stack.
 
 
 Roadmap
 -------
 
-- [ ] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
+- [ ] Switch to Step Functions Express to save on costs. 
+- [ ] Compress S3 data with brotli, set cache expiry metadata.
+- [X] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
+- [X] Implement Step Function for better coordination of individual functionality.
 - [X] Add Lambda Extension to monitor network and CPU usage of the RSS function. 
 - [X] Optimize Lambda memory and timeout settings to lower cost. 
 - [X] Add "smart" extraction of the full blogpost text from the post URL, so that the full content of a post can be stored in DynamoDB or sent through e-mail.
@@ -51,8 +56,10 @@ About the repo contents
 The following description describes briefly what the files and folder contains;
 
 - The *deploy.sh* file can be used to deploy the stack to AWS. It will download all of the Lambda dependancies, pack them and upload them to S3 and deploy a CloudFormation stack using SAM. 
-- The *template.yaml* file is the SAM CloudFormation stack for the deployment. You do not need to edit this file directly unless you want to change some of the default values of the stack. 
-- The *lambda-dynamo* folder contains the source code for the RSS retrieval Lambda. The function also optionally sends an email through SES when new articles are retrieved. You will also find the *feeds.txt* file here that contain the RSS feeds which should be checked.
+- The *template.yaml* file is the SAM CloudFormation stack for the deployment. You do not need to edit this file directly.
+- The *lambda-crawl* folder has the Lambda function to discover the RSS feeds, if files are present on S3 and see how much days of data need to be retrieved. It is triggered at the start of the Step Function.
+- The *lambda-getfeed* folder contains the source code the function that checks every feed individually. It is triggered in the map state of the Step Function.
+- The *statemachine* folder contains the source code for Step Function in JSON.
 - The *lambda-layer* folder contains the *requirements.txt* file for the Lambda layer of the blog retrieval function. 
 
 

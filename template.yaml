@@ -30,18 +30,18 @@ Parameters:
       - 'n'
   
   DaysToRetrieve:
-    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '3' days. 
-    Default: 3
+    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '1' day. 
+    Default: 1
     Type: Number
 
 Resources:
 
-  rssdynamo:
+  rssgetfeed:
     Type: 'AWS::Serverless::Function'
     Properties:
-      Handler: dynamo.handler
+      Handler: getfeed.handler
       Runtime: python3.8
-      CodeUri: lambda-dynamo/
+      CodeUri: lambda-getfeed/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
         - Version: '2012-10-17'
@@ -56,13 +56,8 @@ Resources:
             TableName: !Ref rssfeed
         - S3WritePolicy:
             BucketName: !Ref PublicJsonBucket
-      MemorySize: 1024
-      Timeout: 60
-      Events:
-        Schedule1:
-          Type: Schedule
-          Properties:
-            Schedule: rate(5 minutes)
+      MemorySize: 256
+      Timeout: 20
       Environment:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
@@ -73,7 +68,37 @@ Resources:
           daystoretrieve: !Ref DaysToRetrieve
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
-          POWERTOOLS_SERVICE_NAME: rssaws
+          POWERTOOLS_SERVICE_NAME: rssgetfeed
+          POWERTOOLS_TRACE_DISABLED: "false"
+      Tracing: Active
+      ReservedConcurrentExecutions: 50
+      Layers: 
+        - !Ref lambdalayer
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:2"
+
+  rsscrawl:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: crawl.handler
+      Runtime: python3.8
+      CodeUri: lambda-crawl/
+      Description: 'Retrieve RSS feeds and check files stored on S3'
+      Policies:
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
+        - DynamoDBReadPolicy:
+            TableName: !Ref rssfeed
+        - S3ReadPolicy:
+            BucketName: !Ref PublicJsonBucket
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          dynamo_region: !Ref 'AWS::Region'
+          dynamo_table: !Ref rssfeed
+          daystoretrieve: !Ref DaysToRetrieve
+          s3bucket: !Ref PublicJsonBucket
+          storepublics3: !Ref StorePublicS3
+          POWERTOOLS_SERVICE_NAME: rsscrawl
           POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
@@ -120,5 +145,36 @@ Resources:
         Projection:
           ProjectionType: ALL
 
+  rssblog:
+    Type: AWS::Logs::LogGroup
+
   PublicJsonBucket:
     Type: AWS::S3::Bucket
+
+  # state machine to coordinate the workflow
+  blogstatemachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      Tracing:
+        Enabled: true
+      DefinitionUri: statemachine/rssblog.asl.json
+      DefinitionSubstitutions:
+        rsscrawl: !GetAtt rsscrawl.Arn
+        rssgetfeed: !GetAtt rssgetfeed.Arn
+      Policies: 
+        - LambdaInvokePolicy:
+            FunctionName: !Ref rsscrawl
+        - LambdaInvokePolicy:
+            FunctionName: !Ref rssgetfeed
+        - CloudWatchFullAccess
+      Logging:
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt rssblog.Arn
+
+# print the url of the state machine
+Outputs:
+  StateMachineURL:
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/states/home?region=${AWS::Region}#/statemachines/view/${blogstatemachine}'
