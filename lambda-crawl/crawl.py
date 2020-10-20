@@ -18,9 +18,6 @@ logger = Logger()
 tracer = Tracer()
 
 
-# set how many days of feeds to retrieve blogpost based on environment variable
-days_to_retrieve = int(os.environ['daystoretrieve'])
-
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
 s3 = boto3.client('s3')
@@ -107,7 +104,7 @@ def get_feed(x):
 		ts_old = int(time.time()) - (days_to_retrieve * 86400)
 
 	print(ts_old, url, blogsource)
-	res.append({'ts': ts_old, 'url': url, 'blogsource': blogsource})
+	res.append({'ts': ts_old, 'url': url, 'blogsource': blogsource, 'daystoretrieve': days_to_retrieve})
 
 # worker for queue jobs
 @tracer.capture_method(capture_response = False)
@@ -121,6 +118,21 @@ def worker():
 @tracer.capture_lambda_handler
 def handler(event, context): 
 	
+	# set a default value of 1 for 'days_to_retrieve'
+	global days_to_retrieve
+	days_to_retrieve = 1
+
+	if 'days' in event:
+
+		days_to_retrieve = event['days']
+
+		if int(days_to_retrieve) < 90:
+			('setting days_to_retrieve value to ' + str(days_to_retrieve) + ' based on state machine input')
+
+		else:		
+			print('failed to get valid days input value from step function, proceeding with default value of 1')
+				
+
 	# create global list for results
 	global res
 	res = []
@@ -149,4 +161,4 @@ def handler(event, context):
 		t.start()
 	q1.join()
 
-	return {'results': res, 'guids': guids}
+	return {'results': res, 'guids': guids, 'daystoretrieve': days_to_retrieve }

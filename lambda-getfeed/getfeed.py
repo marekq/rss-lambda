@@ -18,9 +18,6 @@ logger = Logger()
 tracer = Tracer()
 
 
-# set how many days of feeds to retrieve blogpost based on environment variable
-days_to_retrieve = int(os.environ['daystoretrieve'])
-
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
@@ -279,7 +276,7 @@ def get_table_json(blogsource):
 		
 		# since there is a json present, retrieve the blog contents from there and update only 1 days of blogposts from dynamodb
 		# this reduces the read capacity consumed by dynamodb on a file update
-		days_to_get = 1
+		days_to_get = days_to_retrieve
 
 		# retrieve the object from s3
 		s3obj = s3.get_object(Bucket = os.environ['s3bucket'], Key = blogsource + '.json')
@@ -409,11 +406,13 @@ def make_json(content, blogsource):
 @tracer.capture_lambda_handler
 def handler(event, context): 
 	
-	print(event)
+	# set default value for 'days_to_retrieve' 
+	global days_to_retrieve
 
 	# if updating all blogposts, set source to 'all' and skip blogpost retrieval 
 	if event['msg'] == 'all':
 		blogsource = 'all'
+		days_to_retrieve = 1
 
 		# check if there are files on s3 less than 60 seconds old
 		blogupdate = get_s3_json_age()
@@ -425,6 +424,7 @@ def handler(event, context):
 		ts = event['msg']['ts']
 		blogsource = event['msg']['blogsource']
 		guids = event['guids']
+		days_to_retrieve = event['msg']['daystoretrieve']
 
 		# get feed and boolean indicating if an update to s3 is required
 		blogupdate = get_feed(url, blogsource, guids)
@@ -434,5 +434,5 @@ def handler(event, context):
 		print('updating json output on s3 for ' + blogsource)
 		update_json_s3(blogsource)
 
-	# return blogsource and true/false state regarding updates
-	return blogsource, blogupdate
+	# return blogsource, true/false state regarding updates, days to retrieve value
+	return blogsource, blogupdate, days_to_retrieve

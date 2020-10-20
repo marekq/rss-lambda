@@ -12,69 +12,45 @@
           "msg.$": "$"
         }
       },
-      "Next": "ParallelState"
+      "Next": "Get RSS Blog Feed"
     },
-    "ParallelState": {
-      "Type": "Parallel",
-      "InputPath": "$",
+    "Get RSS Blog Feed": {
+      "Type": "Map",
+      "ItemsPath": "$.results",
       "OutputPath": "$",
       "Next": "Run all.json Refresh",
-      "Branches": [
-        {
-          "StartAt": "Pass Feeds and GUIDs",
-          "States": {
-            "Pass Feeds and GUIDs": {
-              "Type": "Pass",
-              "InputPath":"$",
-              "OutputPath":"$",
-              "Comment":"Succeed state",
-              "End": true
-            }
-          }
-        },
-        {
-          "StartAt": "Get RSS Blog Feed",
-          "States": {
-            "Get RSS Blog Feed": {
-              "Type": "Map",
-              "ItemsPath": "$.results",
-              "OutputPath": "$",
-              "End": true,
-              "Parameters": {
-                "msg.$": "$$.Map.Item.Value",
-                "guids.$": "$.guids"
-              },
-              "Iterator": {
-                "StartAt": "Get RSS Blogs",
-                "States": {
-                  "Get RSS Blogs": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
-                    "InputPath": "$",
-                    "OutputPath": "$.Payload",
-                    "Retry": [
-                      {
-                        "ErrorEquals": [ "States.ALL" ],
-                        "IntervalSeconds": 1,
-                        "BackoffRate": 2,
-                        "MaxAttempts": 3
-                      }
-                    ],
-                    "Parameters": {
-                      "FunctionName": "${rssgetfeed}",
-                      "Payload": {  
-                        "msg.$": "$.msg",
-                        "guids.$": "$.guids"
-                      }
-                    },
-                    "End": true
-                  }
-                }
+      "Parameters": {
+        "msg.$": "$$.Map.Item.Value",
+        "guids.$": "$.guids",
+        "daystoretrieve.$": "$.daystoretrieve"
+      },
+      "Iterator": {
+        "StartAt": "Get RSS Blogs",
+        "States": {
+          "Get RSS Blogs": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "InputPath": "$",
+            "OutputPath": "$.Payload",
+            "Retry": [
+              {
+                "ErrorEquals": [ "States.ALL" ],
+                "IntervalSeconds": 1,
+                "BackoffRate": 2,
+                "MaxAttempts": 3
               }
-            }
+            ],
+            "Parameters": {
+              "FunctionName": "${rssgetfeed}",
+              "Payload": {  
+                "msg.$": "$.msg",
+                "guids.$": "$.guids"
+              }
+            },
+            "End": true
           }
         }
-      ]
+      }
     },
     "Run all.json Refresh": {
       "Type": "Task",
@@ -83,7 +59,8 @@
       "Parameters": {
         "FunctionName": "${rssgetfeed}",
         "Payload": {  
-          "msg": "all"
+          "msg": "all",
+          "daystoretrieve": "1"
         }
       },
       "Next": "Finish"
