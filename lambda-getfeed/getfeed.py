@@ -229,44 +229,50 @@ def get_feed(url, blogsource, guids):
 @tracer.capture_method(capture_response = False)
 def get_s3_json_age():
 
-	# set variable for s3 object age
-	newer_than_1_min = False
+	# set variable for s3 update operation
+	updateblog = False
 
 	# list objects in s3
 	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
 
 	# iterate over present files in s3
-	for s3file in s3list['Contents']:
+	if 'Contents' in s3list:
+		for s3file in s3list['Contents']:
 
-		# get last modified time of item
-		s3time = s3file['LastModified']
+			# get last modified time of item
+			s3time = s3file['LastModified']
 
-		objtime = int(time.mktime(s3time.timetuple()))
-		nowtime = int(time.time())
-		difftime = nowtime - objtime
+			objtime = int(time.mktime(s3time.timetuple()))
+			nowtime = int(time.time())
+			difftime = nowtime - objtime
 
-		if difftime < 60:
-			newer_than_1_min = True
-	
-		print(str(difftime) + " " + str(s3file['Key']))
+			# if an s3 file was created in the last 60 seconds, update the blog feed
+			if difftime < 60:
+				updateblog = True
+		
+			print(str(difftime) + " " + str(s3file['Key']))
 
-	return newer_than_1_min
+	# return true/false about blog update status
+	return updateblog
 
 
 # get the contents of the dynamodb table for json object on S3
 @tracer.capture_method(capture_response = False)
 def get_table_json(blogsource):
 
-	# create a list for found guids from s3 json
+	# create a list for found guids from json stored on s3
 	s3guids = []
 
-	# check if the s3 object exists by listing current s3 objects
+	# create a list for s3 objects that were found
 	s3files = []
+
+	# check if the s3 object exists by listing current s3 objects
 	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
 
 	# iterate over present files in s3
-	for x in s3list['Contents']:
-		s3files.append(x['Key'])
+	if 'Contents' in s3list:
+		for x in s3list['Contents']:
+			s3files.append(x['Key'])
 
 	# if the blog json is available on s3
 	if str(blogsource + '.json') in s3files:
@@ -405,15 +411,12 @@ def handler(event, context):
 	
 	print(event)
 
-	# if updating all blogposts, skip blogpost retrieval
+	# if updating all blogposts, set source to 'all' and skip blogpost retrieval 
 	if event['msg'] == 'all':
 		blogsource = 'all'
-		blogupdate = get_s3_json_age()
 
-		# if new blogposts found, update json on s3
-		if blogupdate:
-			print('updating json output on s3')
-			update_json_s3(blogsource)
+		# check if there are files on s3 less than 60 seconds old
+		blogupdate = get_s3_json_age()
 
 	else:
 
@@ -423,7 +426,13 @@ def handler(event, context):
 		blogsource = event['msg']['blogsource']
 		guids = event['guids']
 
-		# get feed and whether an update to s3 is required
+		# get feed and boolean indicating if an update to s3 is required
 		blogupdate = get_feed(url, blogsource, guids)
 
+	# if new blogposts found, create new json output on s3
+	if blogupdate:
+		print('updating json output on s3 for ' + blogsource)
+		update_json_s3(blogsource)
+
+	# return blogsource and true/false state regarding updates
 	return blogsource, blogupdate
