@@ -117,21 +117,22 @@ def worker():
 @logger.inject_lambda_context(log_event = True)
 @tracer.capture_lambda_handler
 def handler(event, context): 
-	
+
 	# set a default value of 1 for 'days_to_retrieve'
 	global days_to_retrieve
-	days_to_retrieve = 1
+	days_to_retrieve = int(1)
 
-	if 'days' in event:
+	try:
+		if int(event['msg']['days']) < 90:
+			days_to_retrieve = int(event['msg']['days'])
+			print('setting days_to_retrieve value to ' + str(days_to_retrieve) + ' based on state machine input')
 
-		days_to_retrieve = event['days']
-
-		if int(days_to_retrieve) < 90:
-			('setting days_to_retrieve value to ' + str(days_to_retrieve) + ' based on state machine input')
-
-		else:		
+		else:
 			print('failed to get valid days input value from step function, proceeding with default value of 1')
-				
+
+	except Exception as e:		
+		print('failed to get valid days input value from step function, proceeding with default value of 1')
+		print(e)
 
 	# create global list for results
 	global res
@@ -161,4 +162,9 @@ def handler(event, context):
 		t.start()
 	q1.join()
 
-	return {'results': res, 'guids': guids, 'daystoretrieve': days_to_retrieve }
+	# return results, guid and days to retrieve
+	return {
+		'results': res, 
+		'guids': guids, 
+		'daystoretrieve': str(days_to_retrieve) 
+	}

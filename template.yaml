@@ -28,11 +28,6 @@ Parameters:
     AllowedValues:
       - 'y'
       - 'n'
-  
-  DaysToRetrieve:
-    Description: Configure how far to look back in time while retrieving blogposts per category from DynamoDB, default '1' day. 
-    Default: 1
-    Type: Number
 
 Resources:
 
@@ -65,7 +60,6 @@ Resources:
           fromemail: !Ref SourceEmail
           toemail: !Ref DestEmail
           sendemails: !Ref SendEmails
-          daystoretrieve: !Ref DaysToRetrieve
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
           POWERTOOLS_SERVICE_NAME: rssgetfeed
@@ -95,7 +89,6 @@ Resources:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          daystoretrieve: !Ref DaysToRetrieve
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
           POWERTOOLS_SERVICE_NAME: rsscrawl
