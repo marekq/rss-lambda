@@ -143,7 +143,9 @@ def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 @tracer.capture_method(capture_response = False)
 def get_feed(url, blogsource, guids):
 
+	# create a variable about blog update and list to store new blogs
 	blogudate = False
+	newblogs = []
 
 	# get the rss feed
 	rssfeed = get_rss(url)
@@ -204,6 +206,9 @@ def get_feed(url, blogsource, guids):
 				# put record to dynamodb
 				put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
 
+				# add blog to newblogs list
+				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
+
 				# if sendemails enabled, generate the email message body for ses and send email
 				if os.environ['sendemails'] == 'y':
 
@@ -219,7 +224,7 @@ def get_feed(url, blogsource, guids):
 				# skip, print message that a guid was found twice
 				print("skipped double guid " + guid + " " + blogsource + " " + title + " " + datestr_post)
 
-	return blogudate
+	return blogudate, newblogs
 
 
 # check if new items were uploaded to s3
@@ -408,6 +413,8 @@ def handler(event, context):
 	
 	# set default value for 'days_to_retrieve' 
 	global days_to_retrieve
+	
+	newblogs = ''
 
 	# if updating all blogposts, set source to 'all' and skip blogpost retrieval 
 	if event['msg'] == 'all':
@@ -427,12 +434,11 @@ def handler(event, context):
 		days_to_retrieve = event['msg']['daystoretrieve']
 
 		# get feed and boolean indicating if an update to s3 is required
-		blogupdate = get_feed(url, blogsource, guids)
+		blogupdate, newblogs = get_feed(url, blogsource, guids)
+		
+		return newblogs
 
 	# if new blogposts found, create new json output on s3
 	if blogupdate:
 		print('updating json output on s3 for ' + blogsource)
 		update_json_s3(blogsource)
-
-	# return blogsource, true/false state regarding updates, days to retrieve value
-	return blogsource, blogupdate, days_to_retrieve
