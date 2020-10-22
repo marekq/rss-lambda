@@ -56,7 +56,7 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "OutputPath": "$.Payload",
-      "InputPath": null,
+      "InputPath": "$",
       "Parameters": {
         "FunctionName": "${rssgetfeed}",
         "Payload": {  

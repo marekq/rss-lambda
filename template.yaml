@@ -49,7 +49,7 @@ Resources:
         - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
-        - S3WritePolicy:
+        - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 256
       Timeout: 20

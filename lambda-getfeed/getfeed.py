@@ -144,11 +144,13 @@ def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 def get_feed(url, blogsource, guids):
 
 	# create a variable about blog update and list to store new blogs
-	blogudate = False
+	blogupdate = False
 	newblogs = []
 
 	# get the rss feed
 	rssfeed = get_rss(url)
+
+	print('found ' + str(len(rssfeed['entries'])) + ' blog entries')
 
 	# check all the retrieved articles for published dates
 	for x in rssfeed['entries']:
@@ -162,7 +164,7 @@ def get_feed(url, blogsource, guids):
 		datestr_post = time.strftime('%d-%m-%Y %H:%M', x['updated_parsed'])
 
 		# if the post guid is not found in dynamodb and newer than the specified amount of days, retrieve the record
-		if guid not in guids and (timest_now < timest_post + (86400 * days_to_retrieve)):
+		if guid not in guids and (timest_now < (timest_post + (86400 * days_to_retrieve))):
 
 			# retrieve other blog post values, remove double quotes from title
 			link = str(x['link'])
@@ -196,35 +198,27 @@ def get_feed(url, blogsource, guids):
 					category_tmp.append(str(tag['term']))
 	
 				category = str(', '.join(category_tmp))
-			
-			# write the record to dynamodb, only if the guid is not present already. this prevents double posts from appearing by crossposting. 
-			if guid not in guids:
 
-				# update the blogpost
-				blogudate = True
+			# update the blogpost
+			blogupdate = True
 
-				# put record to dynamodb
-				put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
+			# put record to dynamodb
+			put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
 
-				# add blog to newblogs list
-				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
+			# add blog to newblogs list
+			newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
 
-				# if sendemails enabled, generate the email message body for ses and send email
-				if os.environ['sendemails'] == 'y':
+			# if sendemails enabled, generate the email message body for ses and send email
+			if os.environ['sendemails'] == 'y':
 
-					# get mail title and email recepient
-					mailt = blogsource.upper()+' - '+title
-					recpt = os.environ['toemail']
+				# get mail title and email recepient
+				mailt = blogsource.upper()+' - '+title
+				recpt = os.environ['toemail']
 
-					# send the email
-					send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post)
+				# send the email
+				send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post)
 
-			else:
-				
-				# skip, print message that a guid was found twice
-				print("skipped double guid " + guid + " " + blogsource + " " + title + " " + datestr_post)
-
-	return blogudate, newblogs
+	return blogupdate, newblogs
 
 
 # check if new items were uploaded to s3
@@ -235,7 +229,9 @@ def get_s3_json_age():
 	updateblog = False
 
 	# list objects in s3
-	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
+	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
+
+	print('get s3 list ' + str(s3list))
 
 	# iterate over present files in s3
 	if 'Contents' in s3list:
@@ -269,19 +265,21 @@ def get_table_json(blogsource):
 	s3files = []
 
 	# check if the s3 object exists by listing current s3 objects
-	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
+	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
+
+	# set days_to_get value
+	days_to_get = int(days_to_retrieve)
+
 
 	# iterate over present files in s3
 	if 'Contents' in s3list:
+
 		for x in s3list['Contents']:
 			s3files.append(x['Key'])
 
 	# if the blog json is available on s3
 	if str(blogsource + '.json') in s3files:
 		
-		# since there is a json present, retrieve the blog contents from there and update only 1 days of blogposts from dynamodb
-		# this reduces the read capacity consumed by dynamodb on a file update
-		days_to_get = days_to_retrieve
 
 		# retrieve the object from s3
 		s3obj = s3.get_object(Bucket = os.environ['s3bucket'], Key = blogsource + '.json')
@@ -295,9 +293,6 @@ def get_table_json(blogsource):
 
 	# if the blog json does not exist on s3
 	else:
-		
-		# set the days to retrieve value based on the given setting
-		days_to_get = days_to_retrieve
 
 		# since the previous results can not be found, create an emptylist for results and get current time
 		res = []
@@ -378,6 +373,8 @@ def cp_s3(blogsource):
 @tracer.capture_method(capture_response = False)
 def update_json_s3(blog):
 
+	print('updating json for ' + blog)
+
 	# get the json content from DynamoDB
 	out = get_table_json(blog)
 
@@ -413,13 +410,14 @@ def handler(event, context):
 	
 	# set default value for 'days_to_retrieve' 
 	global days_to_retrieve
-	
+	days_to_retrieve = int(1)
+
 	newblogs = ''
+	blogupdate = False
 
 	# if updating all blogposts, set source to 'all' and skip blogpost retrieval 
 	if event['msg'] == 'all':
 		blogsource = 'all'
-		days_to_retrieve = 1
 
 		# check if there are files on s3 less than 60 seconds old
 		blogupdate = get_s3_json_age()
@@ -428,17 +426,16 @@ def handler(event, context):
 
 		# get submitted values from blog to retrieve
 		url = event['msg']['url']
-		ts = event['msg']['ts']
 		blogsource = event['msg']['blogsource']
 		guids = event['guids']
-		days_to_retrieve = event['msg']['daystoretrieve']
+		days_to_retrieve = int(event['msg']['daystoretrieve'])
 
 		# get feed and boolean indicating if an update to s3 is required
 		blogupdate, newblogs = get_feed(url, blogsource, guids)
-		
-		return newblogs
 
 	# if new blogposts found, create new json output on s3
-	if blogupdate:
+	if blogupdate == True:
 		print('updating json output on s3 for ' + blogsource)
 		update_json_s3(blogsource)
+
+	return newblogs
