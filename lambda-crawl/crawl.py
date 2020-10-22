@@ -122,6 +122,10 @@ def handler(event, context):
 	global days_to_retrieve
 	days_to_retrieve = int(1)
 
+	global send_email
+	send_email = ''
+
+	# check if days input value was given in step function
 	try:
 		if int(event['msg']['days']) < 90:
 			days_to_retrieve = int(event['msg']['days'])
@@ -132,6 +136,16 @@ def handler(event, context):
 
 	except Exception as e:		
 		print('failed to get valid days input value from step function, proceeding with default value of 1')
+		print(e)
+
+	# check if send email input value was given in step function
+	try:
+		if event['email'] == 'y' or event['email'] == 'yes':
+			print('sending emails based on state machine input')
+			send_email = 'y'
+			
+	except Exception as e:		
+		print('failed to get valid send email input value from step function, proceeding with default value of n')
 		print(e)
 
 	# create global list for results
@@ -166,5 +180,6 @@ def handler(event, context):
 	return {
 		'results': res, 
 		'guids': guids, 
-		'daystoretrieve': str(days_to_retrieve) 
+		'daystoretrieve': str(days_to_retrieve),
+		'sendemail': send_email
 	}

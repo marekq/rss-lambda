@@ -59,7 +59,6 @@ Resources:
           dynamo_table: !Ref rssfeed
           fromemail: !Ref SourceEmail
           toemail: !Ref DestEmail
-          sendemails: !Ref SendEmails
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
           POWERTOOLS_SERVICE_NAME: rssgetfeed
@@ -91,6 +90,7 @@ Resources:
           dynamo_table: !Ref rssfeed
           s3bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
+          sendemails: !Ref SendEmails
           POWERTOOLS_SERVICE_NAME: rsscrawl
           POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active

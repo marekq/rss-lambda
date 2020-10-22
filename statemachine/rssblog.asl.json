@@ -22,7 +22,8 @@
       "Parameters": {
         "msg.$": "$$.Map.Item.Value",
         "guids.$": "$.guids",
-        "daystoretrieve.$": "$.daystoretrieve"
+        "daystoretrieve.$": "$.daystoretrieve",
+        "sendemail.$": "$.sendemail"
       },
       "Iterator": {
         "StartAt": "Get RSS Blogs",
@@ -44,7 +45,8 @@
               "FunctionName": "${rssgetfeed}",
               "Payload": {  
                 "msg.$": "$.msg",
-                "guids.$": "$.guids"
+                "guids.$": "$.guids",
+                "sendemail.$": "$.sendemail"
               }
             },
             "End": true
@@ -60,8 +62,7 @@
       "Parameters": {
         "FunctionName": "${rssgetfeed}",
         "Payload": {  
-          "msg": "all",
-          "daystoretrieve": "1"
+          "msg": "all"
         }
       },
       "Next": "Finish"

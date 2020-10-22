@@ -114,7 +114,7 @@ def comprehend(cleantxt, title):
 
 # send an email out whenever a new blogpost was found - this feature is optional
 @tracer.capture_method(capture_response = False)
-def send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post):
+def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
 	mailmsg = '<html><body><br><i>Posted by '+str(author)+' in ' +str(blogsource) + ' blog on ' + str(datestr_post) + '</i><br><br>'
@@ -180,8 +180,9 @@ def get_feed(url, blogsource, guids):
 			print('retrieving '+str(title)+' in '+str(blogsource)+' using url '+str(link)+'\n')
 			rawhtml, cleantxt = retrieve_url(link)
 
-			# discover tags with comprehend on html output
-			tags = comprehend(cleantxt, title)	
+			# DISABLED COMPREHEND TEMPORARILY - discover tags with comprehend on html output
+			#tags = comprehend(cleantxt, title)	
+			tags = ''
 
 			# clean up blog post description text and remove unwanted characters such as double quotes and spaces (this can be improved further)
 			des	= str(x['description'])
@@ -209,14 +210,14 @@ def get_feed(url, blogsource, guids):
 			newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
 
 			# if sendemails enabled, generate the email message body for ses and send email
-			if os.environ['sendemails'] == 'y':
+			if send_mail == 'y':
 
 				# get mail title and email recepient
 				mailt = blogsource.upper()+' - '+title
 				recpt = os.environ['toemail']
 
 				# send the email
-				send_mail(recpt, title, blogsource, author, rawhtml, link, datestr_post)
+				send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post)
 
 	return blogupdate, newblogs
 
@@ -244,8 +245,8 @@ def get_s3_json_age():
 			nowtime = int(time.time())
 			difftime = nowtime - objtime
 
-			# if an s3 file was created in the last 60 seconds, update the blog feed
-			if difftime < 60:
+			# if an s3 file was created in the last 300 seconds, update the blog feed
+			if difftime < 300:
 				updateblog = True
 		
 			print(str(difftime) + " " + str(s3file['Key']))
@@ -412,6 +413,9 @@ def handler(event, context):
 	global days_to_retrieve
 	days_to_retrieve = int(1)
 
+	# set send email boolean, newblog and blogupdate default values
+	global send_mail
+	send_mail = ''
 	newblogs = ''
 	blogupdate = False
 
@@ -429,6 +433,7 @@ def handler(event, context):
 		blogsource = event['msg']['blogsource']
 		guids = event['guids']
 		days_to_retrieve = int(event['msg']['daystoretrieve'])
+		send_mail = event['sendemail']
 
 		# get feed and boolean indicating if an update to s3 is required
 		blogupdate, newblogs = get_feed(url, blogsource, guids)
