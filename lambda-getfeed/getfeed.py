@@ -360,6 +360,7 @@ def get_table_json(blogsource):
 @tracer.capture_method(capture_response = False)
 def cp_s3(blogsource):
 
+	# put object to s3
 	s3.put_object(
 		Bucket = os.environ['s3bucket'], 
 		Body = open('/tmp/' + blogsource + '.json', 'rb'), 
@@ -392,14 +393,19 @@ def make_json(content, blogsource):
 	# write the json file to /tmp/
 	fpath = '/tmp/' + blogsource + '.json'
 
+	# create empty list for filteredcontent
 	filteredcontent = []
 
+	# filter blog posts for category
 	for blog in content:
 		if blog['blogsource'] == blogsource or blogsource == 'all':
 			filteredcontent.append(blog)
 
+	# sort the keys by timestamp
+	dumpfile = sorted(filteredcontent, key = lambda k: k['timest'], reverse = True)
+
 	with open(fpath, "w") as outfile: 
-		json.dump(filteredcontent, outfile) 
+		json.dump(dumpfile, outfile) 
 
 	print('wrote to ' + fpath)
 

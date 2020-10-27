@@ -123,7 +123,7 @@ def handler(event, context):
 	days_to_retrieve = int(1)
 
 	global send_email
-	send_email = ''
+	send_email = os.environ['sendemails']
 
 	# check if days input value was given in step function
 	try:
@@ -147,6 +147,8 @@ def handler(event, context):
 	except Exception as e:		
 		print('failed to get valid send email input value from step function, proceeding with default value of n')
 		print(e)
+
+	print('sending emails: ' + str(send_email))
 
 	# create global list for results
 	global res
