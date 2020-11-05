@@ -42,6 +42,4 @@ yan, https://feeds.feedburner.com/theburningmonk
 corey, https://www.lastweekinaws.com/blog/feed
 cloudguru, https://acloudguru.com/blog/feed
 werner, https://www.allthingsdistributed.com/index.xml
-james, https://perspectives.mvdirona.com/feed
 jeremy, https://offbynone.io/feed
-eric, http://feeds.alestic.com/alestic
