@@ -30,7 +30,7 @@ Installation
 
 - Make sure the AWS SAM CLI and Docker are installed and configured on your local machine.
 - If you want, you can edit the RSS feeds in 'lambda/feeds.txt'. These contain various AWS blogs I read by default.
-- Run 'bash deploy.sh' to deploy the stack. If the 'samconfig.toml' file is not present, you will have to enter the stack details manually. 
+- Run 'make init' to deploy the stack for the first time. Once the 'samconfig.toml' file is present, you can use 'make deploy'.
 - If you optionally select to use email notifications using SES, you will need to ensure that you have the SES sender and email address preconfigured in your account. There is unfortunately no simple way to provision this using SAM. 
 
 You can now run the Step Function to trigger the blog refresh. The URL to find the Step Function is given as an output value of the CloudFormation stack.
@@ -39,15 +39,15 @@ You can now run the Step Function to trigger the blog refresh. The URL to find t
 Roadmap
 -------
 
-- [ ] Switch to Step Functions Express to save on costs. 
-- [ ] Compress S3 data with brotli, set cache expiry metadata.
+- [ ] Switch to Step Functions Express to save on costs. The Express option can be used today, but is more difficult to debug in case of Lambda failures. 
 - [X] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
 - [X] Implement Step Function for better coordination of individual functionality.
 - [X] Add Lambda Extension to monitor network and CPU usage of the RSS function. 
 - [X] Optimize Lambda memory and timeout settings to lower cost. 
-- [X] Add "smart" extraction of the full blogpost text from the post URL, so that the full content of a post can be stored in DynamoDB or sent through e-mail.
-- [X] Add generation of JSON files with blogposts to S3 for easier inclusion in a single page app (i.e. deployed using Amplify or Netlify).
+- [X] Add "smart" text extraction of the full blogpost, so that the full content of a post can be stored in DynamoDB or sent through e-mail.
+- [X] Add generation of JSON files with blogposts to S3 for easier inclusion in a single page app (as seen on https://marek.rocks ).
 - [X] Add support for retrieval of non AWS blogposts using RSS.
+- [X] Add DynamoDB Global Secondary Indexes for (partial) data retrieval based on GUID, timestamp and blog categories. 
 
 
 About the repo contents

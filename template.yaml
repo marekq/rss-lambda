@@ -52,7 +52,7 @@ Resources:
         - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 256
-      Timeout: 20
+      Timeout: 30
       Environment:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
@@ -67,7 +67,7 @@ Resources:
       ReservedConcurrentExecutions: 50
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:2"
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
 
   rsscrawl:
     Type: 'AWS::Serverless::Function'
@@ -83,7 +83,7 @@ Resources:
         - S3ReadPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 256
-      Timeout: 10
+      Timeout: 30
       Environment:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
@@ -97,7 +97,7 @@ Resources:
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:2"
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
 
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
@@ -116,22 +116,32 @@ Resources:
     Type: 'AWS::DynamoDB::Table'
     Properties:
       AttributeDefinitions:
-      - AttributeName: blogsource
+      - AttributeName: guid
         AttributeType: S
       - AttributeName: timest
         AttributeType: S
       - AttributeName: visible
         AttributeType: S
-      KeySchema:
       - AttributeName: blogsource
+        AttributeType: S
+      KeySchema:
+      - AttributeName: guid
         KeyType: HASH
       - AttributeName: timest
         KeyType: RANGE  
       BillingMode: PAY_PER_REQUEST
       GlobalSecondaryIndexes:
-      - IndexName: timest
+      - IndexName: visible
         KeySchema:
         - AttributeName: visible
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+      - IndexName: timest
+        KeySchema:
+        - AttributeName: blogsource
           KeyType: HASH
         - AttributeName: timest
           KeyType: RANGE
@@ -148,6 +158,7 @@ Resources:
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
     Properties:
+      Name: 'GetRSSFeeds'
       Type: STANDARD
       Tracing:
         Enabled: true
