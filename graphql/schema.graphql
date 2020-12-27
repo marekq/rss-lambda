@@ -6,7 +6,7 @@ type Query {
   getddbsource(guid: String!, timest: String!): ddbsource
   listddbsource(filter: TableddbsourceFilterInput, limit: Int, nextToken: String): ddbsourceConnection
   queryddbsourceByTimest(after: String, blogsource: String!, first: Int): ddbsourceConnection
-  queryddbsourceByVisible(after: String, first: Int, visible: String!): ddbsourceConnection
+  queryddbsourceByVisible(filter: TableddbsourceFilterInput, after: String, first: Int, visible: String!): ddbsourceConnection
 }
 
 type ddbsource {

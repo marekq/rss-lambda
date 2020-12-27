@@ -1,5 +1,12 @@
 {
-  "version": "2017-02-28",
-  "operation": "Scan",
+  "version" : "2017-02-28",
+  "operation" : "Query",
+  "index" : "visible",
+  "query": {
+    "expression": "visible = :visible",
+    "expressionValues": {
+      ":visible" : { "S" : "y" }
+    }
+  },
   "nextToken": #if( $context.args.nextToken ) "$context.args.nextToken" #else null #end
 }
