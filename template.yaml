@@ -244,16 +244,27 @@ Resources:
         TableName: !Ref rssfeed
         AwsRegion: !Ref 'AWS::Region'
 
-  # create appsync resolver
-  BlogResolver:
+  # create appsync listddbsource resolver
+  ListDDBResolver:
     Type: 'AWS::AppSync::Resolver'
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/getBlogs-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/getBlogs-response.vtl'
+      RequestMappingTemplateS3Location: './graphql/getlist-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/getlist-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: listddbsource
+
+  # create appsync resolver
+  QueryDDBResolver:
+    Type: 'AWS::AppSync::Resolver'
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/getquery-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/getquery-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: queryddbsourceByVisible
 
 # print the url of the state machine and graphql details
 Outputs:

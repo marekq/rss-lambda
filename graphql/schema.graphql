@@ -27,35 +27,6 @@ type ddbsourceConnection {
   nextToken: String
 }
 
-input TableBooleanFilterInput {
-  eq: Boolean
-  ne: Boolean
-}
-
-input TableFloatFilterInput {
-  between: [Float]
-  contains: Float
-  eq: Float
-  ge: Float
-  gt: Float
-  le: Float
-  lt: Float
-  ne: Float
-  notContains: Float
-}
-
-input TableIDFilterInput {
-  beginsWith: ID
-  between: [ID]
-  contains: ID
-  eq: ID
-  ge: ID
-  gt: ID
-  le: ID
-  lt: ID
-  ne: ID
-  notContains: ID
-}
 
 input TableddbsourceFilterInput {
   blogsource: TableStringFilterInput
