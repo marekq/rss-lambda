@@ -1,0 +1,78 @@
+schema {
+  query: Query
+}
+
+type Query {
+  getddbsource(guid: String!, timest: String!): ddbsource
+  listddbsource(filter: TableddbsourceFilterInput, limit: Int, nextToken: String): ddbsourceConnection
+  queryddbsourceByTimest(after: String, blogsource: String!, first: Int): ddbsourceConnection
+  queryddbsourceByVisible(after: String, first: Int, visible: String!): ddbsourceConnection
+}
+
+type ddbsource {
+  blogsource: String
+  guid: String!
+  timest: String!
+  visible: String
+  fulltxt: String
+  link: String
+  tag: String
+  description: String
+  author: String
+  title: String
+}
+
+type ddbsourceConnection {
+  items: [ddbsource]
+  nextToken: String
+}
+
+input TableBooleanFilterInput {
+  eq: Boolean
+  ne: Boolean
+}
+
+input TableFloatFilterInput {
+  between: [Float]
+  contains: Float
+  eq: Float
+  ge: Float
+  gt: Float
+  le: Float
+  lt: Float
+  ne: Float
+  notContains: Float
+}
+
+input TableIDFilterInput {
+  beginsWith: ID
+  between: [ID]
+  contains: ID
+  eq: ID
+  ge: ID
+  gt: ID
+  le: ID
+  lt: ID
+  ne: ID
+  notContains: ID
+}
+
+input TableddbsourceFilterInput {
+  blogsource: TableStringFilterInput
+  guid: TableStringFilterInput
+  timest: TableStringFilterInput
+  visible: TableStringFilterInput
+}
+
+input TableStringFilterInput {
+  beginsWith: String
+  between: [String]
+  contains: String
+  eq: String
+  ge: String
+  gt: String
+  le: String
+  lt: String
+  ne: String
+  notContains: String
+}

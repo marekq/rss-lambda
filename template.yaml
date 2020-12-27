@@ -148,9 +148,11 @@ Resources:
         Projection:
           ProjectionType: ALL
 
+  # log group
   rssblog:
     Type: AWS::Logs::LogGroup
 
+  # public s3 bucket
   PublicJsonBucket:
     Type: AWS::S3::Bucket
 
@@ -158,7 +160,6 @@ Resources:
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Name: 'GetRSSFeeds'
       Type: STANDARD
       Tracing:
         Enabled: true
@@ -178,7 +179,87 @@ Resources:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !GetAtt rssblog.Arn
 
-# print the url of the state machine
+  # graphql api role
+  GraphQLApiRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: 'appsync.amazonaws.com'
+          Action: 'sts:AssumeRole'
+      Policies:
+      - PolicyName: CWLogs
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            Resource: '*'
+      - PolicyName: DDBRead   
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'dynamodb:GetItem'
+            - 'dynamodb:Query'
+            - 'dynamodb:Scan'
+            Resource:
+            - !GetAtt rssfeed.Arn
+            - !Sub '${rssfeed.Arn}/*'
+
+  # create graphql api
+  GraphQLApi:
+    Type: 'AWS::AppSync::GraphQLApi'
+    Properties:
+      XrayEnabled: true
+      Name: !Ref 'AWS::StackName'
+      AuthenticationType: AWS_IAM
+      LogConfig:
+        CloudWatchLogsRoleArn: !GetAtt 'GraphQLApiRole.Arn'
+        FieldLogLevel: ALL
+
+  # define graphql schema
+  GraphQLSchema:
+    Type: 'AWS::AppSync::GraphQLSchema'
+    Properties:
+      DefinitionS3Location: './graphql/schema.graphql'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+
+  # define dynamodb source
+  DDBDataSource:
+    Type: 'AWS::AppSync::DataSource'
+    Properties:
+      Type: AMAZON_DYNAMODB
+      ServiceRoleArn: !GetAtt 'GraphQLApiRole.Arn'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      Name: ddbsourcce
+      DynamoDBConfig:
+        TableName: !Ref rssfeed
+        AwsRegion: !Ref 'AWS::Region'
+
+  # create appsync resolver
+  BlogResolver:
+    Type: 'AWS::AppSync::Resolver'
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/getBlogs-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/getBlogs-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: listddbsource
+
+# print the url of the state machine and graphql details
 Outputs:
   StateMachineURL:
     Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/states/home?region=${AWS::Region}#/statemachines/view/${blogstatemachine}'
+  GraphQLUrl:
+    Value: !GetAtt 'GraphQLApi.GraphQLUrl'
+  ApiId:
+    Value: !GetAtt 'GraphQLApi.ApiId'
