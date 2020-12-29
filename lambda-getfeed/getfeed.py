@@ -43,7 +43,7 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 	ddb.put_item(
 		TableName = os.environ['dynamo_table'], 
 		Item = {
-			'timest' : timest_post,			# store the unix timestamp of the post
+			'timest' : timest_post,			# store the unix timestamp of the post as an int
 			'datestr' : datestr_post,		# store the human friendly timestamp of the post
 			'title' : title,
 			'description' : description,	# store the short rss feed description of the content
@@ -204,7 +204,7 @@ def get_feed(url, blogsource, guids):
 			blogupdate = True
 
 			# put record to dynamodb
-			put_dynamo(str(timest_post), title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
+			put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
 
 			# add blog to newblogs list
 			newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
@@ -310,12 +310,12 @@ def get_table_json(blogsource):
 	if blogsource != 'all':
 
 		# query the dynamodb table for blogposts of a specific category from up to 1 day ago
-		blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(diff_ts))
 			
 	else:
 
 		# query the dynamodb table for all category blogposts from up to 1 day ago
-		blogs = ddb.query(IndexName = "visible", ScanIndexForward = True, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+		blogs = ddb.query(IndexName = "visible", ScanIndexForward = True, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(diff_ts))
 
 	# iterate over the returned items
 	for a in blogs['Items']:
@@ -335,12 +335,12 @@ def get_table_json(blogsource):
 			if blogsource != 'all':
 
 				# query the dynamodb table for blogposts of a specific category 
-				blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(source) & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(source) & Key('timest').gt(diff_ts))
 			
 			else:
 
 				# query the dynamodb table for all category blogposts from up to 30 days old
-				blogs = ddb.query(IndexName = "visible", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(diff_ts)))
+				blogs = ddb.query(IndexName = "visible", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(diff_ts))
 
 			# add an entry per blog to the output list
 			for a in blogs['Items']:

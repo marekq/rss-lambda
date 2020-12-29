@@ -29,6 +29,17 @@ Parameters:
       - 'y'
       - 'n'
 
+  CreateAppSync:
+    Description: Create a read only AppSync endpoint for the blogs stored in DynamoDB
+    Default: 'n'
+    Type: String
+    AllowedValues:
+      - 'y'
+      - 'n'
+  
+Conditions: 
+  EnableAppSync: !Equals [ !Ref CreateAppSync, y ]
+
 Resources:
 
   rssgetfeed:
@@ -115,11 +126,12 @@ Resources:
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
     Properties:
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
       - AttributeName: guid
         AttributeType: S
       - AttributeName: timest
-        AttributeType: S
+        AttributeType: N
       - AttributeName: visible
         AttributeType: S
       - AttributeName: blogsource
@@ -129,7 +141,6 @@ Resources:
         KeyType: HASH
       - AttributeName: timest
         KeyType: RANGE  
-      BillingMode: PAY_PER_REQUEST
       GlobalSecondaryIndexes:
       - IndexName: visible
         KeySchema:
@@ -178,9 +189,15 @@ Resources:
         Destinations:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !GetAtt rssblog.Arn
+      Events:
+        ScheduledEventEvery15Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
 
   # graphql api role
   GraphQLApiRole:
+    Condition: EnableAppSync 
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -216,6 +233,7 @@ Resources:
 
   # create graphql api
   GraphQLApi:
+    Condition: EnableAppSync 
     Type: 'AWS::AppSync::GraphQLApi'
     Properties:
       XrayEnabled: true
@@ -227,6 +245,7 @@ Resources:
 
   # define graphql schema
   GraphQLSchema:
+    Condition: EnableAppSync 
     Type: 'AWS::AppSync::GraphQLSchema'
     Properties:
       DefinitionS3Location: './graphql/schema.graphql'
@@ -234,6 +253,7 @@ Resources:
 
   # define dynamodb source
   DDBDataSource:
+    Condition: EnableAppSync 
     Type: 'AWS::AppSync::DataSource'
     Properties:
       Type: AMAZON_DYNAMODB
@@ -246,6 +266,7 @@ Resources:
 
   # create appsync listddbsource resolver
   ListDDBResolver:
+    Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
       TypeName: Query
@@ -257,6 +278,7 @@ Resources:
 
   # create appsync resolver
   QueryDDBResolver:
+    Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
       TypeName: Query

@@ -3,9 +3,10 @@
   "operation" : "Query",
   "index" : "visible",
   "query": {
-    "expression": "visible = :visible",
+    "expression": "visible = :visible and timest > :timest",
     "expressionValues": {
-      ":visible" : { "S" : "y" }
+      ":visible" : { "S" : "y" },
+      ":timest" : { "N": $context.arguments.timest }
     }
   },
   "nextToken": #if( $context.args.nextToken ) "$context.args.nextToken" #else null #end

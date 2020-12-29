@@ -33,7 +33,7 @@ def get_guids(ts):
 	guids = []
 
 	# get the guid values up to x days ago
-	queryres = ddb.query(ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+	queryres = ddb.query(ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(ts))
 
 	for x in queryres['Items']:
 		if 'guid' in x:
@@ -42,7 +42,7 @@ def get_guids(ts):
 
 	# paginate the query in case more than 100 results are returned
 	while 'LastEvaluatedKey' in queryres:
-		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(str(ts)))
+		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(ts))
 
 		for x in queryres['Items']:
 			if 'guid' in x:

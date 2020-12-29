@@ -3,7 +3,7 @@ rss-lambda
 
 Monitor your favourite blogs through RSS and get a notification whenever a new blog is posted. New blogposts are stored in DynamoDB and (optionally) sent out to your e-mail address using SES. The Lambda function to retrieve the blogs runs every 10 minutes by default. The cost for running the solution should be less than $3 per month, which is mostly influenced by the polling frequency of the function. 
 
-You can extend the blog scraper by adding your own RSS feeds to monitor. By default various AWS related feeds are included, but you can add any of your own feeds in the *lambda-dynamo/feeds.txt* file. Within the DynamoDB table that is deployed, you can find various details about the blogposts and also the text or html versions of the content. This can be helpful in case you are building your own feed scraper or notification service. 
+You can extend the blog scraper by adding your own RSS feeds to monitor. By default various AWS related feeds are included, but you can add any of your own feeds in the *lambda-dynamo/feeds.txt* file. Within the DynamoDB table that is deployed, you can find various details about the blogposts and also the text or html versions of the content. This can be helpful in case you are building your own feed scraper or notification service. You can also use the included AppSync endpoint to read data from the table using GraphQL. 
 
 Optionally, a JSON output for every blog category can be uploaded as a public S3 object. These files can be included in a single page app, such as the one at https://marek.rocks . The output will be compressed using 'brotli' or something similar later in the future to save on S3 storage and bandwidth costs. 
 
@@ -40,6 +40,7 @@ Roadmap
 -------
 
 - [ ] Switch to Step Functions Express to save on costs. The Express option can be used today, but is more difficult to debug in case of Lambda failures. 
+- [X] Add AppSync endpoint for retrieval of blog posts through Amplify. 
 - [X] Decompose the "monolith" Lambda function into smaller functions. This will allow for easier retries and debugging of blogpost retrieval. 
 - [X] Implement Step Function for better coordination of individual functionality.
 - [X] Add Lambda Extension to monitor network and CPU usage of the RSS function. 
