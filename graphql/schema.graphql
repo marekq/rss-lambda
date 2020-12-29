@@ -3,17 +3,15 @@ schema {
 }
 
 type Query {
-  getddbsource(guid: String!, timest: String!): ddbsource
-  listddbsource(filter: TableddbsourceFilterInput, limit: Int, nextToken: String): ddbsourceConnection
-  queryddbsourceByTimest(after: String, blogsource: String!, first: Int): ddbsourceConnection
-  queryddbsourceByVisible(filter: TableddbsourceFilterInput, after: String, first: Int, visible: String!, timest: Int!): ddbsourceConnection
+  QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): ddbsourceConnection
+  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): ddbsourceConnection
 }
 
 type ddbsource {
-  blogsource: String
+  blogsource: String!
   guid: String!
-  timest: String!
-  visible: String
+  timest: Int!
+  visible: String!
   fulltxt: String
   link: String
   tag: String
@@ -30,7 +28,7 @@ type ddbsourceConnection {
 input TableddbsourceFilterInput {
   blogsource: TableStringFilterInput
   guid: TableStringFilterInput
-  timest: TableStringFilterInput
+  timest: TableIntFilterInput
   visible: TableStringFilterInput
 }
 
@@ -45,4 +43,16 @@ input TableStringFilterInput {
   lt: String
   ne: String
   notContains: String
+}
+
+input TableIntFilterInput {
+	between: [Int]
+	contains: Int
+	eq: Int
+	ge: Int
+	gt: Int
+	le: Int
+	lt: Int
+	ne: Int
+	notContains: Int
 }

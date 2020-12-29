@@ -264,35 +264,31 @@ Resources:
         TableName: !Ref rssfeed
         AwsRegion: !Ref 'AWS::Region'
 
-  # create appsync listddbsource resolver
-  ListDDBResolver:
+  # create per blogsource resolver for appsync
+  BlogSourceResolver:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/getlist-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/getlist-response.vtl'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
-      FieldName: listddbsource
+      FieldName: QueryDdbByBlogsourceAndTimest
 
-  # create appsync resolver
-  QueryDDBResolver:
+  # create visible blogs resolver for appsync
+  VisibleResolver:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/getquery-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/getquery-response.vtl'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
-      FieldName: queryddbsourceByVisible
+      FieldName: QueryDdbByVisibleAndTimest
 
 # print the url of the state machine and graphql details
 Outputs:
   StateMachineURL:
     Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/states/home?region=${AWS::Region}#/statemachines/view/${blogstatemachine}'
-  GraphQLUrl:
-    Value: !GetAtt 'GraphQLApi.GraphQLUrl'
-  ApiId:
-    Value: !GetAtt 'GraphQLApi.ApiId'
