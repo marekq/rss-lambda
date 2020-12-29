@@ -36,12 +36,14 @@ Parameters:
     AllowedValues:
       - 'y'
       - 'n'
-  
+
+# appsync create condition
 Conditions: 
   EnableAppSync: !Equals [ !Ref CreateAppSync, y ]
 
 Resources:
 
+  # create per rss feed retrieval function
   rssgetfeed:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -80,6 +82,7 @@ Resources:
         - !Ref lambdalayer
         - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
 
+  # create rss feed crawl function
   rsscrawl:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -110,6 +113,7 @@ Resources:
         - !Ref lambdalayer
         - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
 
+  # create lambda layer with dependencies
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -123,6 +127,7 @@ Resources:
     Metadata:
       BuildMethod: python3.8
 
+  # dynamodb table for blog articles
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -238,7 +243,7 @@ Resources:
     Properties:
       XrayEnabled: true
       Name: !Ref 'AWS::StackName'
-      AuthenticationType: AWS_IAM
+      AuthenticationType: API_KEY
       LogConfig:
         CloudWatchLogsRoleArn: !GetAtt 'GraphQLApiRole.Arn'
         FieldLogLevel: ALL
@@ -263,6 +268,13 @@ Resources:
       DynamoDBConfig:
         TableName: !Ref rssfeed
         AwsRegion: !Ref 'AWS::Region'
+
+  # create appsync api key
+  ApiKey:
+    Condition: EnableAppSync
+    Type: 'AWS::AppSync::ApiKey'
+    Properties:
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
 
   # create per blogsource resolver for appsync
   BlogSourceResolver:

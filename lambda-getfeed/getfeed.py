@@ -323,7 +323,7 @@ def get_table_json(blogsource):
 		# if guid not present in s3 json file
 		if a['guid'] not in s3guids:
 
-			b = {'timest': a['timest'], 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+			b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
 			
 			# add the json object to the result list
 			res.append(b)
@@ -348,7 +348,7 @@ def get_table_json(blogsource):
 				# if guid not present in s3 json file
 				if a['guid'] not in s3guids:
 
-					b = {'timest': a['timest'], 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+					b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
 					
 					# add the json object to the result list
 					res.append(b)

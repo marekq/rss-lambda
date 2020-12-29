@@ -4,7 +4,7 @@ schema {
 
 type Query {
   QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): ddbsourceConnection
-  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): ddbsourceConnection
+  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String, timest: Int!, nextToken: String): ddbsourceConnection
 }
 
 type ddbsource {
