@@ -300,6 +300,18 @@ Resources:
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbByVisibleAndTimest
 
+  # create single article resolver for appsync
+  VisibleResolver:
+    Condition: EnableAppSync 
+    Type: 'AWS::AppSync::Resolver'
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: QueryDdbGetDetailText
+
 # print the url of the state machine and graphql details
 Outputs:
   StateMachineURL:
