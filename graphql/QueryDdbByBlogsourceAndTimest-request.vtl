@@ -2,6 +2,8 @@
   "version" : "2017-02-28",
   "operation" : "Query",
   "index" : "timest",
+  "limit" : 100,
+  "scanIndexForward" : true,
   "query" : {
     "expression" : "blogsource = :bs and timest > :ts",
     "expressionValues" : {

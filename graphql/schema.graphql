@@ -4,7 +4,7 @@ schema {
 
 type Query {
   QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): ddbsourceConnection
-  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String, timest: Int!, nextToken: String): ddbsourceConnection
+  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): ddbsourceConnection
   QueryDdbGetDetailText(guid: String!, nextToken: String): ddbsourceConnection
 }
 
@@ -13,12 +13,10 @@ type ddbsource {
   guid: String!
   timest: Int!
   visible: String!
-  fulltxt: String
   link: String
-  tag: String
-  description: String
   author: String
   title: String
+  datestr: String
 }
 
 type ddbsourceConnection {

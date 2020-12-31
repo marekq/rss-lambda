@@ -2,10 +2,12 @@
   "version" : "2017-02-28",
   "operation" : "Query",
   "index" : "visible",
+  "limit" : 100,
+  "scanIndexForward" : true,
   "query": {
-    "expression": "visible = :visible and timest > :timest",
-    "expressionValues": {
-      ":visible" : { "S" : "y" },
+    "expression" : "visible = :visible and timest > :timest",
+    "expressionValues" : {
+      ":visible" : { "S" : "$context.arguments.visible" },
       ":timest" : { "N": $context.arguments.timest }
     }
   },

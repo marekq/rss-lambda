@@ -301,7 +301,7 @@ Resources:
       FieldName: QueryDdbByVisibleAndTimest
 
   # create single article resolver for appsync
-  VisibleResolver:
+  SingleBlogResolver:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
