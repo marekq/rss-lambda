@@ -3,24 +3,36 @@ schema {
 }
 
 type Query {
-  QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): ddbsourceConnection
-  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): ddbsourceConnection
-  QueryDdbGetDetailText(guid: String!, nextToken: String): ddbsourceConnection
+  QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): listourceConnection
+  QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): listourceConnection
+  QueryDdbGetDetailText(guid: String!): itemsourceConnection
 }
 
-type ddbsource {
-  blogsource: String!
-  guid: String!
-  timest: Int!
-  visible: String!
+type listsource {
+  blogsource: String
+  guid: String
+  timest: Int
   link: String
   author: String
   title: String
-  datestr: String
 }
 
-type ddbsourceConnection {
-  items: [ddbsource]
+type listourceConnection {
+  items: [listsource]
+  nextToken: String
+}
+
+type itemsource {
+  blogsource: String
+  guid: String
+  timest: Int
+  link: String
+  author: String
+  description: String
+}
+
+type itemsourceConnection {
+  items: [itemsource]
   nextToken: String
 }
 

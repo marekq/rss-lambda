@@ -1,13 +1,10 @@
 {
   "version" : "2017-02-28",
   "operation" : "Query",
-  "limit" : 100,
-  "scanIndexForward" : true,
   "query" : {
     "expression" : "guid = :guid",
     "expressionValues" : {
       ":guid" : {"S": "$context.arguments.guid"}
     }
-  },
-  "nextToken": #if( $context.args.nextToken ) "$context.args.nextToken" #else null #end
+  }
 }

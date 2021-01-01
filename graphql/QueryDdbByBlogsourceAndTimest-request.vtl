@@ -3,7 +3,8 @@
   "operation" : "Query",
   "index" : "timest",
   "limit" : 100,
-  "scanIndexForward" : true,
+  "scanIndexForward" : false,
+  "select" : "ALL_PROJECTED_ATTRIBUTES",
   "query" : {
     "expression" : "blogsource = :bs and timest > :ts",
     "expressionValues" : {
