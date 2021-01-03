@@ -1,12 +1,12 @@
 {
   "version" : "2017-02-28",
   "operation" : "Query",
-  "index" : "timest",
+  "index" : "visible",
   "select" : "ALL_PROJECTED_ATTRIBUTES",
   "query" : {
-    "expression" : "blogsource = :bs and timest = :ts",
+    "expression" : "visible = :visible and timest = :ts",
     "expressionValues" : {
-      ":bs" : { "S" : "$context.arguments.blogsource" },
+      ":visible" : { "S" : "y" },
       ":ts" : { "N" : 0 }
     }
   }

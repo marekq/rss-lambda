@@ -338,8 +338,8 @@ Resources:
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbGetDetailText
 
-  # create page count resolver for appsync
-  PageCountResolver:
+  # create page count resolver per blog for appsync
+  PerBlogPageCountResolver:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::Resolver'
     Properties:
@@ -349,6 +349,18 @@ Resources:
       ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountPerBlog
+
+  # create page count resolver for all blogs appsync
+  AllBlogsPageCountResolver:
+    Condition: EnableAppSync 
+    Type: 'AWS::AppSync::Resolver'
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: QueryDdbItemCountAll
 
 # print the url of the state machine and graphql details
 Outputs:
