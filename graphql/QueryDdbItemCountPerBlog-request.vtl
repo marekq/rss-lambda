@@ -1,0 +1,12 @@
+{
+  "version" : "2017-02-28",
+  "operation" : "Query",
+  "index" : "timest",
+  "query" : {
+    "expression" : "blogsource = :bs and timest = :ts",
+    "expressionValues" : {
+      ":bs" : { "S" : "$context.arguments.blogsource" },
+      ":ts" : { "N" : 0 }
+    }
+  }
+}

@@ -6,6 +6,7 @@ type Query {
   QueryDdbByBlogsourceAndTimest(filter: TableddbsourceFilterInput, blogsource: String!, timest: Int!, nextToken: String): listourceConnection
   QueryDdbByVisibleAndTimest(filter: TableddbsourceFilterInput, visible: String!, timest: Int!, nextToken: String): listourceConnection
   QueryDdbGetDetailText(guid: String!): itemsourceConnection
+  QueryDdbItemCountPerBlog(blogsource: String!): pagecountConnection
 }
 
 type listsource {
@@ -33,7 +34,16 @@ type itemsource {
 
 type itemsourceConnection {
   items: [itemsource]
-  nextToken: String
+}
+
+type pagecount {
+  blogsource: String
+  timest: Int 
+  articlecount: Int
+}
+
+type pagecountConnection {
+  items: [pagecount]
 }
 
 input TableddbsourceFilterInput {

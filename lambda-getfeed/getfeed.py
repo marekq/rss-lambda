@@ -57,7 +57,8 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 			'guid' : guid,					# store the blogpost guid as a unique key
 			'category' : category,
 			'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
-		})
+		}
+	)
 
 
 # retrieve the url of a blogpost

@@ -113,6 +113,32 @@ Resources:
         - !Ref lambdalayer
         - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
 
+  # refresh pagecount stored in dynamodb using a manual lambda invoke
+  pagecount:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: pagecount.handler
+      Runtime: python3.8
+      CodeUri: lambda-pagecount/
+      Description: 'Retrieve the total article count for blogs stored in DynamoDB'
+      Policies:
+        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
+        - DynamoDBCrudPolicy:
+            TableName: !Ref rssfeed
+      MemorySize: 256
+      Timeout: 30
+      Environment:
+        Variables:
+          dynamo_region: !Ref 'AWS::Region'
+          dynamo_table: !Ref rssfeed
+          POWERTOOLS_SERVICE_NAME: rssgetpagecount
+          POWERTOOLS_TRACE_DISABLED: "false"
+      Tracing: Active
+      ReservedConcurrentExecutions: 1
+      Layers: 
+        - !Ref lambdalayer
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
+
   # create lambda layer with dependencies
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
@@ -311,6 +337,18 @@ Resources:
       ResponseMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbGetDetailText
+
+  # create page count resolver for appsync
+  PageCountResolver:
+    Condition: EnableAppSync 
+    Type: 'AWS::AppSync::Resolver'
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: QueryDdbItemCountPerBlog
 
 # print the url of the state machine and graphql details
 Outputs:
