@@ -13,7 +13,6 @@ def getblog_count(blogsource):
     if blogsource == 'all':
 
         # get all blogs with timestamp greater than 1
-        print('getting all blogposts using visible index')
         blogs = ddb.query(IndexName = "visible", Select = 'COUNT', KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(1))
         
         count += int(blogs['Count'])
@@ -27,7 +26,6 @@ def getblog_count(blogsource):
     else:
 
         # get a count of blogpost per category
-        print('getting ' + blogsource + ' posts using timest index')
         blogs = ddb.query(IndexName = "timest", Select = 'COUNT', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(1))
 
         count += int(blogs['Count'])

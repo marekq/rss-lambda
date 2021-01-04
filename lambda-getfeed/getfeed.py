@@ -31,6 +31,20 @@ def get_rss(url):
 	return feedparser.parse(url)
 
 
+# update the item count in dynamodb by 1
+@tracer.capture_method(capture_response = False)
+def update_itemcount(blogsource):
+	
+	# update guid: <blogsource>, timest: 0
+	ddb.update_item(
+		Key = { "guid" : blogsource, "timest" : 0 },
+		ExpressionAttributeValues = { ":inc" : 1 },
+		UpdateExpression = "ADD articlecount :inc"
+	)
+
+	print('incremented ' + blogsource + ' count by 1')
+
+
 # write the blogpost record into DynamoDB
 @tracer.capture_method(capture_response = False)
 def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
@@ -59,6 +73,12 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 			'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 		}
 	)
+
+	# increment dynamodb counter for blog category by 1
+	update_itemcount(blogsource)
+
+	# increment dynamodb counter for all blogs by 1
+	update_itemcount('all')
 
 
 # retrieve the url of a blogpost
