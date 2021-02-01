@@ -54,37 +54,49 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 	if len(description) == 0:
 		description = '...'
 	
-	# create item payload
-	item = {
+	# create item payload for algolia
+	smallitem = {
 		'objectID' : guid,				# add unique object id for Algolia search
 		'timest' : timest_post,			# store the unix timestamp of the post as an int
-		'datestr' : datestr_post,		# store the human friendly timestamp of the post
 		'title' : title,
 		'description' : description,	# store the short rss feed description of the content
-		'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
-		'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
 		'link' : link,
 		'blogsource' : blogsource,
 		'author' : author,
-		'tag' : tags,
-		'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
-		'guid' : guid,					# store the blogpost guid as a unique key
-		'category' : category,
-		'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
+		'guid' : guid					# store the blogpost guid as a unique key
 	} 
 
-	# put the record into dynamodb
-	ddb.put_item(
-		TableName = os.environ['dynamo_table'], 
-		Item = item
-	)
+	# add additional attributes for dynamodb record
+	extraitem = {
+		'category' : category,
+		'datestr' : datestr_post,		# store the human friendly timestamp of the post
+		'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
+		'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
+		'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
+		'tag' : tags,
+		'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
+	}
 
-	# optionally, put the record in your Algolia search DB if api key is set
+	# optionally, put the small record in your Algolia search DB if api key is set
 	if os.environ['algolia_apikey'] != '':
 
 		client = SearchClient.create(os.environ['algolia_app'], os.environ['algolia_apikey'])
 		index = client.init_index(os.environ['algolia_index'])
-		res = index.save_objects([item])
+		res = index.save_objects([smallitem])
+
+	# merge small and extra item for dynamodb
+	def Merge(dict1, dict2):
+		res = {**dict1, **dict2}
+		return res
+
+	# create fullitem for dynamodb
+	fullitem = Merge(smallitem, extraitem)
+
+	# put the full record into dynamodb
+	ddb.put_item(
+		TableName = os.environ['dynamo_table'], 
+		Item = fullitem
+	)
 
 	# increment dynamodb counter for blog category by 1
 	update_itemcount(blogsource)
