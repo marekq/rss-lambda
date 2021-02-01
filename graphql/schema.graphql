@@ -31,6 +31,7 @@ type itemsource {
   link: String
   author: String
   description: String
+  rawhtml: String
 }
 
 type itemsourceConnection {

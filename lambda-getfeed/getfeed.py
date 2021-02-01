@@ -5,6 +5,7 @@
 import base64, botocore, boto3, csv, feedparser
 import gzip, json, os, re, readability, requests
 import queue, sys, threading, time
+from algoliasearch.search_client import SearchClient
 
 from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key, Attr
@@ -53,26 +54,37 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 	if len(description) == 0:
 		description = '...'
 	
+	# create item payload
+	item = {
+		'objectID' : guid,				# add unique object id for Algolia search
+		'timest' : timest_post,			# store the unix timestamp of the post as an int
+		'datestr' : datestr_post,		# store the human friendly timestamp of the post
+		'title' : title,
+		'description' : description,	# store the short rss feed description of the content
+		'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
+		'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
+		'link' : link,
+		'blogsource' : blogsource,
+		'author' : author,
+		'tag' : tags,
+		'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
+		'guid' : guid,					# store the blogpost guid as a unique key
+		'category' : category,
+		'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
+	} 
+
 	# put the record into dynamodb
 	ddb.put_item(
 		TableName = os.environ['dynamo_table'], 
-		Item = {
-			'timest' : timest_post,			# store the unix timestamp of the post as an int
-			'datestr' : datestr_post,		# store the human friendly timestamp of the post
-			'title' : title,
-			'description' : description,	# store the short rss feed description of the content
-			'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
-			'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
-			'link' : link,
-			'blogsource' : blogsource,
-			'author' : author,
-			'tag' : tags,
-			'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
-			'guid' : guid,					# store the blogpost guid as a unique key
-			'category' : category,
-			'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
-		}
+		Item = item
 	)
+
+	# optionally, put the record in your Algolia search DB if api key is set
+	if os.environ['algolia_apikey'] != '':
+
+		client = SearchClient.create(os.environ['algolia_app'], os.environ['algolia_apikey'])
+		index = client.init_index(os.environ['algolia_index'])
+		res = index.save_objects([item])
 
 	# increment dynamodb counter for blog category by 1
 	update_itemcount(blogsource)

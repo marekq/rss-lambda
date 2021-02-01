@@ -1,3 +1,4 @@
+algoliasearch
 aws-lambda-powertools
 BeautifulSoup4
 readability-lxml

@@ -37,6 +37,21 @@ Parameters:
       - 'y'
       - 'n'
 
+  AlgoliaApp: 
+    Description: Optional - add the Algolia App ID
+    Default: ''
+    Type: String
+
+  AlgoliaApikey:
+    Description: Optional - add the Algolia API key
+    Default: ''
+    Type: String
+
+  AlgoliaIndex: 
+    Description: Optional - add the Algolia Index name
+    Default: ''
+    Type: String
+
 # appsync create condition
 Conditions: 
   EnableAppSync: !Equals [ !Ref CreateAppSync, y ]
@@ -68,6 +83,9 @@ Resources:
       Timeout: 30
       Environment:
         Variables:
+          algolia_app: !Ref AlgoliaApp
+          algolia_apikey: !Ref AlgoliaApikey
+          algolia_index: !Ref AlgoliaIndex
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
           fromemail: !Ref SourceEmail
