@@ -30,7 +30,7 @@ networking, https://aws.amazon.com/blogs/networking-and-content-delivery/feed/
 newsblog, https://aws.amazon.com/blogs/aws/feed/
 open-source, https://aws.amazon.com/blogs/opensource/feed/
 public-sector, https://aws.amazon.com/blogs/publicsector/feed/
-quantum, https://aws.amazon.com/blogs/publicsector/blogs/quantum-computing/feed/
+quantum, https://aws.amazon.com/blogs/quantum-computing/feed/
 robotics, https://aws.amazon.com/blogs/robotics/feed/
 sap, https://aws.amazon.com/blogs/awsforsap/feed/
 security, https://aws.amazon.com/blogs/security/feed/
