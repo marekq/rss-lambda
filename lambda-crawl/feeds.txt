@@ -1,4 +1,3 @@
-aws, https://aws.amazon.com/blogs/aws/feed/
 apn, https://aws.amazon.com/blogs/apn/feed/
 architecture, https://aws.amazon.com/blogs/architecture/feed/
 big-data, https://aws.amazon.com/blogs/big-data/feed/

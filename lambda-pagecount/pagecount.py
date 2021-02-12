@@ -3,7 +3,7 @@ from boto3.dynamodb.conditions import Key, Attr
 
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region']).Table(os.environ['dynamo_table'])
 
-blogs = ["apn", "architecture", "big-data", "biz-prod", "cli", "cloudguru", "compute", "contact-center", "containers", "corey", "cost-mgmt", "database", "desktop", "developer", "devops", "enterprise-strat", "gamedev", "gametech", "governance", "industries", "infrastructure", "iot", "java", "jeremy", "management-tools", "marketplace", "media", "messaging", "ml", "mobile", "modernizing", "networking", "newsblog", "open-source", "public-sector", "robotics", "sap", "security", "security-bulletins", "serverless", "storage", "training", "werner", "whats-new", "yan", "all"]
+blogs = ["apn", "architecture", "big-data", "biz-prod", "cli", "cloudguru", "compute", "contact-center", "containers", "corey", "cost-mgmt", "database", "desktop", "developer", "devops", "enterprise-strat", "gamedev", "gametech", "governance", "industries", "infrastructure", "iot", "java", "jeremy", "management-tools", "marketplace", "media", "messaging", "ml", "mobile", "modernizing", "networking", "newsblog", "open-source", "public-sector", "quantum", "robotics", "sap", "security", "security-bulletins", "serverless", "startups", "storage", "training", "werner", "whats-new", "yan", "all"]
 
 # get blogsource item count per category
 def getblog_count(blogsource):
