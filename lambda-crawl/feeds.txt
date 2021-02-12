@@ -1,3 +1,4 @@
+aws, https://aws.amazon.com/blogs/aws/feed/
 apn, https://aws.amazon.com/blogs/apn/feed/
 architecture, https://aws.amazon.com/blogs/architecture/feed/
 big-data, https://aws.amazon.com/blogs/big-data/feed/
@@ -30,11 +31,13 @@ networking, https://aws.amazon.com/blogs/networking-and-content-delivery/feed/
 newsblog, https://aws.amazon.com/blogs/aws/feed/
 open-source, https://aws.amazon.com/blogs/opensource/feed/
 public-sector, https://aws.amazon.com/blogs/publicsector/feed/
+quantum, https://aws.amazon.com/blogs/publicsector/blogs/quantum-computing/feed/
 robotics, https://aws.amazon.com/blogs/robotics/feed/
 sap, https://aws.amazon.com/blogs/awsforsap/feed/
 security, https://aws.amazon.com/blogs/security/feed/
 security-bulletins, https://aws.amazon.com/security/security-bulletins/feed/
 serverless, https://aws.amazon.com/blogs/aws/category/serverless/feed/
+startups, https://aws.amazon.com/blogs/startups/feed/
 storage, https://aws.amazon.com/blogs/storage/feed/
 training, https://aws.amazon.com/blogs/training-and-certification/feed/
 whats-new, https://aws.amazon.com/new/feed/ 
