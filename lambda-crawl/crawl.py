@@ -11,12 +11,9 @@ from boto3.dynamodb.conditions import Key, Attr
 from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
+logger = Logger()
 modules_to_be_patched = ["boto3", "requests"]
 tracer = Tracer(patch_modules = modules_to_be_patched)
-
-logger = Logger()
-tracer = Tracer()
-
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])

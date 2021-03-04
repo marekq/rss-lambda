@@ -220,7 +220,7 @@ Resources:
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Type: STANDARD
+      Type: EXPRESS
       Tracing:
         Enabled: true
       DefinitionUri: statemachine/rssblog.asl.json
