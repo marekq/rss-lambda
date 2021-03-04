@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
 logger = Logger()
-modules_to_be_patched = ["boto3", "requests"]
+modules_to_be_patched = ["botocore", "boto3", "requests"]
 tracer = Tracer(patch_modules = modules_to_be_patched)
 
 # establish a session with SES, DynamoDB and Comprehend
