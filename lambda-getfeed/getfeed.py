@@ -12,7 +12,7 @@ from boto3.dynamodb.conditions import Key, Attr
 from datetime import date, datetime, timedelta
 from bs4 import BeautifulSoup
 
-modules_to_be_patched = ["boto3", "requests"]
+modules_to_be_patched = [ "boto3", "requests" ]
 tracer = Tracer(patch_modules = modules_to_be_patched)
 
 logger = Logger()
@@ -20,7 +20,7 @@ tracer = Tracer()
 
 
 # establish a session with SES, DynamoDB and Comprehend
-ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
+ddb = boto3.resource('dynamodb', region_name = os.environ['AWS_REGION'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
 s3 = boto3.client('s3')
@@ -48,7 +48,7 @@ def update_itemcount(blogsource):
 
 # write the blogpost record into DynamoDB
 @tracer.capture_method(capture_response = False)
-def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
+def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post, table, event):
 
 	# if no description was submitted, put a dummy value to prevent issues parsing the output
 	if len(description) == 0:
@@ -73,16 +73,16 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 		'fulltxt': cleantxt,			# store the "clean" text of the blogpost, using \n as a line delimiter
 		'lower-tag' : tags.lower(),		# convert the tags to lowercase, which makes it easier to search or match these
 		'rawhtml': rawhtml,				# store the raw html output of the readability plugin, in order to include the blog content with text markup
-		'tag' : tags,
+		'tag' : tags,					# set the comprehend tags
 		'visible' : 'y'					# set the blogpost to visible by default - this "hack" allows for a simple query on a static primary key
 	}
 
-	# optionally, put the small record in your Algolia search DB if api key is set
-	if os.environ['algolia_apikey'] != '':
+	# optionally, put the small record in your Algolia search DB if the API key is set
+	if event['enable_algolia'] == 'y':
 
-		client = SearchClient.create(os.environ['algolia_app'], os.environ['algolia_apikey'])
-		index = client.init_index(os.environ['algolia_index'])
-		res = index.save_objects([smallitem])
+		client = SearchClient.create(event['algolia_app'], event['algolia_apikey'])
+		index = client.init_index(event['algolia_index'])
+		index.save_objects([smallitem])
 
 	# merge small and extra item for dynamodb
 	def Merge(dict1, dict2):
@@ -94,7 +94,7 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 
 	# put the full record into dynamodb
 	ddb.put_item(
-		TableName = os.environ['dynamo_table'], 
+		TableName = table, 
 		Item = fullitem
 	)
 
@@ -166,8 +166,8 @@ def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 	mailmsg += '<a href="' + link + '">view post here</a><br><br>' + str(rawhtml) + '<br></body></html>'
 
 	# send the email using SES
-	r = ses.send_email(
-		Source = os.environ['fromemail'],
+	ses.send_email(
+		Source = event['from_email'],
 		Destination = {'ToAddresses': [recpt]},
 		Message = {
 			'Subject': {
@@ -186,7 +186,7 @@ def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 # main function to kick off collection of an rss feed
 @tracer.capture_method(capture_response = False)
-def get_feed(url, blogsource, guids):
+def get_feed(url, blogsource, guids, table, event):
 
 	# create a variable about blog update and list to store new blogs
 	blogupdate = False
@@ -225,9 +225,8 @@ def get_feed(url, blogsource, guids):
 			print('retrieving '+str(title)+' in '+str(blogsource)+' using url '+str(link)+'\n')
 			rawhtml, cleantxt = retrieve_url(link)
 
-			# DISABLED COMPREHEND TEMPORARILY - discover tags with comprehend on html output
-			#tags = comprehend(cleantxt, title)	
-			tags = ''
+			# discover tags with comprehend on html output
+			tags = comprehend(cleantxt, title)	
 
 			# clean up blog post description text and remove unwanted characters such as double quotes and spaces (this can be improved further)
 			des	= str(x['description'])
@@ -249,7 +248,7 @@ def get_feed(url, blogsource, guids):
 			blogupdate = True
 
 			# put record to dynamodb
-			put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
+			put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post, table, event)
 
 			# add blog to newblogs list
 			newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
@@ -258,8 +257,8 @@ def get_feed(url, blogsource, guids):
 			if send_mail == 'y':
 
 				# get mail title and email recepient
-				mailt = blogsource.upper()+' - '+title
-				recpt = os.environ['toemail']
+				title = blogsource.upper()+' - '+title
+				recpt = event['to_email']
 
 				# send the email
 				send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post)
@@ -269,13 +268,13 @@ def get_feed(url, blogsource, guids):
 
 # check if new items were uploaded to s3
 @tracer.capture_method(capture_response = False)
-def get_s3_json_age():
+def get_s3_json_age(bucket):
 
 	# set variable for s3 update operation
 	updateblog = False
 
 	# list objects in s3
-	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
+	s3list = s3.list_objects_v2(Bucket = bucket)
 
 	print('get s3 list ' + str(s3list))
 
@@ -302,7 +301,7 @@ def get_s3_json_age():
 
 # get the contents of the dynamodb table for json object on S3
 @tracer.capture_method(capture_response = False)
-def get_table_json(blogsource):
+def get_table_json(blogsource, bucket):
 
 	# create a list for found guids from json stored on s3
 	s3guids = []
@@ -311,7 +310,7 @@ def get_table_json(blogsource):
 	s3files = []
 
 	# check if the s3 object exists by listing current s3 objects
-	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
+	s3list = s3.list_objects_v2(Bucket = bucket)
 
 	# set days_to_get value
 	days_to_get = int(days_to_retrieve)
@@ -326,9 +325,8 @@ def get_table_json(blogsource):
 	# if the blog json is available on s3
 	if str(blogsource + '.json') in s3files:
 		
-
 		# retrieve the object from s3
-		s3obj = s3.get_object(Bucket = os.environ['s3bucket'], Key = blogsource + '.json')
+		s3obj = s3.get_object(Bucket = bucket, Key = blogsource + '.json')
 		
 		# create list for results from json
 		res = json.loads(s3obj['Body'].read())
@@ -368,7 +366,7 @@ def get_table_json(blogsource):
 		# if guid not present in s3 json file
 		if a['guid'] not in s3guids:
 
-			b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+			b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
 			
 			# add the json object to the result list
 			res.append(b)
@@ -380,7 +378,7 @@ def get_table_json(blogsource):
 			if blogsource != 'all':
 
 				# query the dynamodb table for blogposts of a specific category 
-				blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(source) & Key('timest').gt(diff_ts))
+				blogs = ddb.query(IndexName = "timest", ScanIndexForward = True, ExclusiveStartKey = lastkey, ProjectionExpression = 'blogsource, datestr, timest, title, author, description, link, guid', KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(diff_ts))
 			
 			else:
 
@@ -393,7 +391,7 @@ def get_table_json(blogsource):
 				# if guid not present in s3 json file
 				if a['guid'] not in s3guids:
 
-					b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip(), 'author': a['author']}
+					b = {'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'], 'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'], 'description': a['description'].strip()}
 					
 					# add the json object to the result list
 					res.append(b)
@@ -403,11 +401,11 @@ def get_table_json(blogsource):
 
 # copy the file to s3 with a public acl
 @tracer.capture_method(capture_response = False)
-def cp_s3(blogsource):
+def cp_s3(blogsource, bucket):
 
 	# put object to s3
 	s3.put_object(
-		Bucket = os.environ['s3bucket'], 
+		Bucket = bucket, 
 		Body = open('/tmp/' + blogsource + '.json', 'rb'), 
 		Key = blogsource + '.json', 
 		ACL = 'public-read',
@@ -418,18 +416,18 @@ def cp_s3(blogsource):
 
 # update json objects on S3 for single page web apps
 @tracer.capture_method(capture_response = False)
-def update_json_s3(blog):
+def update_json_s3(blog, bucket):
 
 	print('updating json for ' + blog)
 
 	# get the json content from DynamoDB
-	out = get_table_json(blog)
+	out = get_table_json(blog, bucket)
 
 	# create the json and return path
 	make_json(out, blog)
 
 	# upload the json to s3
-	cp_s3(blog)
+	cp_s3(blog, bucket)
 
 
 # create a json file from blog content
@@ -460,22 +458,27 @@ def make_json(content, blogsource):
 @tracer.capture_lambda_handler
 def handler(event, context): 
 	
+	print('event ' + str(event))
+
 	# set default value for 'days_to_retrieve' 
 	global days_to_retrieve
 	days_to_retrieve = int(1)
 
 	# set send email boolean, newblog and blogupdate default values
 	global send_mail
-	send_mail = ''
-	newblogs = ''
+	send_mail = event['send_mail']
 	blogupdate = False
+	newblogs = ''
+
+	bucket = event['s3_bucket']
+	table = os.environ['dynamo_table']
 
 	# if updating all blogposts, set source to 'all' and skip blogpost retrieval 
 	if event['msg'] == 'all':
 		blogsource = 'all'
 
 		# check if there are files on s3 less than 60 seconds old
-		blogupdate = get_s3_json_age()
+		blogupdate = get_s3_json_age(bucket)
 
 	else:
 
@@ -484,14 +487,14 @@ def handler(event, context):
 		blogsource = event['msg']['blogsource']
 		guids = event['guids']
 		days_to_retrieve = int(event['msg']['daystoretrieve'])
-		send_mail = event['sendemail']
+		send_mail = event['send_mail']
 
 		# get feed and boolean indicating if an update to s3 is required
-		blogupdate, newblogs = get_feed(url, blogsource, guids)
+		blogupdate, newblogs = get_feed(url, blogsource, guids, table, event)
 
 	# if new blogposts found, create new json output on s3
-	if blogupdate == True:
+	if blogupdate == True and event['storepublics3'] == 'y':
 		print('updating json output on s3 for ' + blogsource)
-		update_json_s3(blogsource)
+		update_json_s3(blogsource,  bucket)
 
 	return newblogs

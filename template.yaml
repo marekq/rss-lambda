@@ -37,6 +37,14 @@ Parameters:
       - 'y'
       - 'n'
 
+  EnableAlgolia:
+    Description: Optional - enable Algolia search index support
+    Default: 'n'
+    Type: 'String'
+    AllowedValues:
+      - 'y'
+      - 'n'
+
   AlgoliaApp: 
     Description: Optional - add the Algolia App ID
     Default: ''
@@ -79,26 +87,17 @@ Resources:
             TableName: !Ref rssfeed
         - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
-      MemorySize: 256
+      MemorySize: 512
       Timeout: 30
       Environment:
         Variables:
-          algolia_app: !Ref AlgoliaApp
-          algolia_apikey: !Ref AlgoliaApikey
-          algolia_index: !Ref AlgoliaIndex
-          dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          fromemail: !Ref SourceEmail
-          toemail: !Ref DestEmail
-          s3bucket: !Ref PublicJsonBucket
-          storepublics3: !Ref StorePublicS3
-          POWERTOOLS_SERVICE_NAME: rssgetfeed
-          POWERTOOLS_TRACE_DISABLED: "false"
+         
       Tracing: Active
       ReservedConcurrentExecutions: 50
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # create rss feed crawl function
   rsscrawl:
@@ -118,18 +117,22 @@ Resources:
       Timeout: 30
       Environment:
         Variables:
+          algolia_app: !Ref AlgoliaApp
+          algolia_apikey: !Ref AlgoliaApikey
+          algolia_index: !Ref AlgoliaIndex
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          s3bucket: !Ref PublicJsonBucket
+          from_email: !Ref SourceEmail
+          to_email: !Ref DestEmail
+          s3_bucket: !Ref PublicJsonBucket
           storepublics3: !Ref StorePublicS3
-          sendemails: !Ref SendEmails
-          POWERTOOLS_SERVICE_NAME: rsscrawl
-          POWERTOOLS_TRACE_DISABLED: "false"
+          send_mail: !Ref SendEmails
+          enable_algolia: !Ref EnableAlgolia
       Tracing: Active
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # refresh pagecount stored in dynamodb using a manual lambda invoke
   pagecount:
@@ -155,7 +158,7 @@ Resources:
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:12"
+        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # create lambda layer with dependencies
   lambdalayer:
@@ -220,7 +223,7 @@ Resources:
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
     Properties:
-      Type: EXPRESS
+      Type: STANDARD
       Tracing:
         Enabled: true
       DefinitionUri: statemachine/rssblog.asl.json

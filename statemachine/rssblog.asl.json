@@ -16,14 +16,25 @@
     },
     "Get RSS Blog Feed": {
       "Type": "Map",
+      "InputPath": "$",
       "ItemsPath": "$.results",
       "OutputPath": "$",
-      "Next": "Run all.json Refresh",
+      "ResultPath": "$.map",
+      "Next": "Finish",
       "Parameters": {
         "msg.$": "$$.Map.Item.Value",
         "guids.$": "$.guids",
-        "daystoretrieve.$": "$.daystoretrieve",
-        "sendemail.$": "$.sendemail"
+        "s3_bucket.$": "$.s3_bucket",
+        "algolia_app.$": "$.algolia_app",
+        "algolia_apikey.$": "$.algolia_apikey",
+        "algolia_index.$": "$.algolia_index",
+        "dynamo_region.$": "$.dynamo_region",
+        "dynamo_table.$": "$.dynamo_table",
+        "from_email.$": "$.from_email",
+        "to_email.$": "$.to_email",
+        "storepublics3.$": "$.storepublics3",
+        "enable_algolia.$": "$.enable_algolia",
+        "send_mail.$": "$.send_mail"
       },
       "Iterator": {
         "StartAt": "Get RSS Blogs",
@@ -46,26 +57,20 @@
               "Payload": {  
                 "msg.$": "$.msg",
                 "guids.$": "$.guids",
-                "sendemail.$": "$.sendemail"
+                "send_mail.$": "$.send_mail",
+                "s3_bucket.$": "$.s3_bucket",
+                "dynamo_table.$": "$.dynamo_table",
+                "enable_algolia.$": "$.enable_algolia",
+                "algolia_app.$": "$.algolia_app",
+                "algolia_apikey.$": "$.algolia_apikey",
+                "algolia_index.$": "$.algolia_index",
+                "storepublics3.$": "$.storepublics3"
               }
             },
             "End": true
           }
         }
       }
-    },
-    "Run all.json Refresh": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "OutputPath": "$.Payload",
-      "InputPath": "$",
-      "Parameters": {
-        "FunctionName": "${rssgetfeed}",
-        "Payload": {  
-          "msg": "all"
-        }
-      },
-      "Next": "Finish"
     },
     "Finish": {
       "Type": "Succeed",

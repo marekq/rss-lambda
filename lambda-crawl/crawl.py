@@ -78,7 +78,7 @@ def read_feed():
 
 # check if the s3 object exists by listing current s3 objects
 def get_s3_files():
-	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
+	s3list = s3.list_objects(Bucket = os.environ['s3_bucket'])
 
 	return s3list
 
@@ -119,8 +119,7 @@ def handler(event, context):
 	global days_to_retrieve
 	days_to_retrieve = int(1)
 
-	global send_email
-	send_email = os.environ['sendemails']
+	send_mail = os.environ['send_mail']
 
 	# check if days input value was given in step function
 	try:
@@ -137,15 +136,15 @@ def handler(event, context):
 
 	# check if send email input value was given in step function
 	try:
-		if event['email'] == 'y' or event['email'] == 'yes':
+		if event['send_mail'] == 'y' or event['send_mail'] == 'yes':
 			print('sending emails based on state machine input')
-			send_email = 'y'
+			send_mail = 'y'
 			
 	except Exception as e:		
 		print('failed to get valid send email input value from step function, proceeding with default value of n')
 		print(e)
 
-	print('sending emails: ' + str(send_email))
+	print('sending emails: ' + str(send_mail))
 
 	# create global list for results
 	global res
@@ -180,5 +179,16 @@ def handler(event, context):
 		'results': res, 
 		'guids': guids, 
 		'daystoretrieve': str(days_to_retrieve),
-		'sendemail': send_email
+		'send_mail': send_mail,
+		'algolia_app': os.environ['algolia_app'],
+		'algolia_apikey': os.environ['algolia_apikey'],
+		'algolia_index': os.environ['algolia_index'],
+		'dynamo_region': os.environ['dynamo_region'],
+		'dynamo_table': os.environ['dynamo_table'],
+		'from_email': os.environ['from_email'],
+		'to_email': os.environ['to_email'],
+		's3_bucket': os.environ['s3_bucket'],
+		'storepublics3': os.environ['storepublics3'],
+		'enable_algolia': os.environ['enable_algolia'],
+		'send_mail': os.environ['send_mail']
 	}
