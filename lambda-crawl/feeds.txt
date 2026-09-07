@@ -1,7 +1,12 @@
+architecture, https://aws.amazon.com/blogs/architecture/feed/
 compute, https://aws.amazon.com/blogs/compute/feed/
 containers, https://aws.amazon.com/blogs/containers/feed/
 database, https://aws.amazon.com/blogs/database/feed/
+developer, https://aws.amazon.com/blogs/developer/feed/
+messaging, https://aws.amazon.com/blogs/messaging-and-targeting/feed/
+networking, https://aws.amazon.com/blogs/networking-and-content-delivery/feed/
 newsblog, https://aws.amazon.com/blogs/aws/feed/
+open-source, https://aws.amazon.com/blogs/opensource/feed/
 security, https://aws.amazon.com/blogs/security/feed/
 security-bulletins, https://aws.amazon.com/security/security-bulletins/feed/
 serverless, https://aws.amazon.com/blogs/aws/category/serverless/feed/
