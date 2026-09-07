@@ -26,7 +26,7 @@ def get_rss(url):
 	return feedparser.parse(url)
 
 
-# write the blogpost record and counters atomically and idempotently
+# write the blogpost record atomically and idempotently
 def put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	if not description:
@@ -51,7 +51,6 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	add_provider(fullitem)
 
 	serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
-	counter_increment = {':inc': {'N': '1'}}
 
 	try:
 		ddb.meta.client.transact_write_items(
@@ -63,26 +62,10 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 						'ConditionExpression': 'attribute_not_exists(#guid) AND attribute_not_exists(#timest)',
 						'ExpressionAttributeNames': {'#guid': 'guid', '#timest': 'timest'}
 					}
-				},
-				{
-					'Update': {
-						'TableName': os.environ['dynamo_table'],
-						'Key': {'guid': {'S': blogsource}, 'timest': {'N': '0'}},
-						'ExpressionAttributeValues': counter_increment,
-						'UpdateExpression': 'ADD articlecount :inc'
-					}
-				},
-				{
-					'Update': {
-						'TableName': os.environ['dynamo_table'],
-						'Key': {'guid': {'S': 'all'}, 'timest': {'N': '0'}},
-						'ExpressionAttributeValues': counter_increment,
-						'UpdateExpression': 'ADD articlecount :inc'
-					}
 				}
 			]
 		)
-		print('inserted ' + guid + ' and incremented ' + blogsource + ' and all counters')
+		print('inserted ' + guid)
 		return True
 
 	except ClientError as error:
@@ -92,6 +75,55 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 				print('skipping duplicate article ' + guid)
 				return False
 		raise
+
+
+# refresh a derived article counter from the current table contents
+def refresh_counter(blogsource):
+	count = 0
+
+	if blogsource == 'all':
+		blogs = ddb.query(
+			IndexName = 'visible',
+			Select = 'COUNT',
+			KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(1)
+		)
+	else:
+		blogs = ddb.query(
+			IndexName = 'timest',
+			Select = 'COUNT',
+			KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(1)
+		)
+
+	count += int(blogs['Count'])
+
+	while 'LastEvaluatedKey' in blogs:
+		if blogsource == 'all':
+			blogs = ddb.query(
+				ExclusiveStartKey = blogs['LastEvaluatedKey'],
+				IndexName = 'visible',
+				Select = 'COUNT',
+				KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(1)
+			)
+		else:
+			blogs = ddb.query(
+				ExclusiveStartKey = blogs['LastEvaluatedKey'],
+				IndexName = 'timest',
+				Select = 'COUNT',
+				KeyConditionExpression = Key('blogsource').eq(blogsource) & Key('timest').gt(1)
+			)
+		count += int(blogs['Count'])
+
+	ddb.put_item(
+		Item = {
+			'timest' : 0,
+			'guid' : blogsource,
+			'blogsource' : blogsource,
+			'articlecount' : count,
+			'visible' : 'y'
+		}
+	)
+
+	print('refreshed ' + blogsource + ' article count to ' + str(count))
 
 
 # retrieve the url of a blogpost
@@ -227,6 +259,13 @@ def get_feed(url, blogsource, guids):
 				if send_mail == 'y':
 					send_email(os.environ['toemail'], title, blogsource, author, rawhtml, link, datestr_post)
 
+	# Counters are derived data. Refreshing them after the feed finishes avoids
+	# allowing a malformed legacy counter to abort an otherwise valid article write.
+	try:
+		refresh_counter(blogsource)
+	except Exception as error:
+		print('could not refresh ' + blogsource + ' article count: ' + str(error))
+
 	return blogupdate, newblogs
 
 
@@ -345,6 +384,10 @@ def handler(event, context):
 		blogsource = 'all'
 		blogupdate = get_s3_json_age()
 		newblogs = ''
+		try:
+			refresh_counter('all')
+		except Exception as error:
+			print('could not refresh all article count: ' + str(error))
 	else:
 		url = event['msg']['url']
 		blogsource = event['msg']['blogsource']

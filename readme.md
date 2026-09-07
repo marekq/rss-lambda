@@ -7,7 +7,7 @@ The default feed list includes AWS, Google, and Wiz security feeds. Add or remov
 
 The feed retrieval Lambda stores article metadata and the RSS description in DynamoDB; it does not persist the fetched source HTML or full article text. The frontend retrieves readable content from the live article URL when a row is expanded and uses the stored description only as a fallback. If SES notifications are enabled, the fetched HTML is still used in memory for the email and is not written to DynamoDB. When a new article is found, the workflow also refreshes the source JSON file and the combined `all.json` file in the S3 bucket.
 
-The workflow processes feeds with bounded concurrency and retries only transient Lambda service failures. A failed individual feed is recorded while successful feeds still refresh the JSON output; the overall execution then fails so the SES alert is sent. Article writes and both article counters use one conditional DynamoDB transaction, making retries safe from duplicate records and counts.
+The workflow processes feeds with bounded concurrency and retries only transient Lambda service failures. A failed individual feed is recorded while successful feeds still refresh the JSON output; the overall execution then fails so the SES alert is sent. Article writes use a conditional DynamoDB transaction, making retries safe from duplicate records. Derived article counters are recalculated after each feed and after the combined `all.json` refresh, so malformed legacy counter values cannot abort article ingestion.
 
 
 Installation
