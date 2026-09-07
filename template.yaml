@@ -345,7 +345,28 @@ Resources:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::GraphQLSchema'
     Properties:
-      DefinitionS3Location: './graphql/schema.graphql'
+      Definition: |
+        schema { query: Query }
+
+        type Query {
+          QueryDdbByBlogsourceAndTimest(blogsource: String!, filter: TableddbsourceFilterInput, limit: Int, nextToken: String, timest: Int!): listourceConnection
+          QueryDdbByVisibleAndTimest(blogsource: String!, filter: TableddbsourceFilterInput, limit: Int, nextToken: String, timest: Int!, visible: String!): listourceConnection
+          QueryDdbGetDetailText(guid: String!, timest: Int): itemsourceConnection
+          QueryDdbItemCountPerBlog(blogsource: String!): pagecountConnection
+          QueryDdbItemCountAll(timest: Int!): pagecountConnection
+          blogsByProvider(limit: Int, nextToken: String, provider: BlogProvider!, timest: Int!): listourceConnection
+        }
+
+        type itemsource { author: String blogsource: String description: String guid: String link: String rawhtml: String @deprecated(reason : "Stored HTML is no longer returned. Use description for a plain-text preview.") timest: Int }
+        type itemsourceConnection { items: [itemsource] }
+        type listsource { author: String blogsource: String description: String guid: String link: String timest: Int title: String }
+        type listourceConnection { items: [listsource] nextToken: String }
+        type pagecount { articlecount: Int blogsource: String timest: Int visible: String }
+        type pagecountConnection { items: [pagecount] }
+        enum BlogProvider { aws gcp wiz }
+        input TableIntFilterInput { between: [Int] contains: Int eq: Int ge: Int gt: Int le: Int lt: Int ne: Int notContains: Int }
+        input TableStringFilterInput { beginsWith: String between: [String] contains: String eq: String ge: String gt: String le: String lt: String ne: String notContains: String }
+        input TableddbsourceFilterInput { blogsource: TableStringFilterInput guid: TableStringFilterInput timest: TableIntFilterInput visible: TableStringFilterInput }
       ApiId: !GetAtt 'GraphQLApi.ApiId'
 
   # define dynamodb source
@@ -375,8 +396,28 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-response.vtl'
+      RequestMappingTemplate: |
+        #if(!$util.isNull($ctx.args.filter.blogsource) || !$util.isNull($ctx.args.filter.timest))
+          $util.error("Use blogsource and timest query arguments for index key conditions", "BadRequest")
+        #end
+        #set($filter = {"expression": "#published = :published", "expressionNames": {"#published": "visible"}, "expressionValues": {":published": {"S": "y"}}})
+        #set($limit = $util.defaultIfNull($ctx.args.limit, 100))
+        #if($limit < 1 || $limit > 101)
+          $util.error("limit must be between 1 and 101", "BadRequest")
+        #end
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "index": "feed-source-timest",
+          "limit": $limit,
+          "scanIndexForward": false,
+          "select": "ALL_PROJECTED_ATTRIBUTES",
+          "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "blogsource", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.blogsource), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
+          "filter": $util.toJson($filter),
+          "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbByBlogsourceAndTimest
 
@@ -387,8 +428,25 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "visible",
+          "limit" : 25,
+          "scanIndexForward" : false,
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "visible = :visible and timest > :timest",
+            "expressionValues" : {
+              ":visible" : { "S" : "$context.arguments.visible" },
+              ":timest" : { "N": $context.arguments.timest }
+            }
+          },
+          "nextToken": #if( $context.args.nextToken ) "$context.args.nextToken" #else null #end
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbByVisibleAndTimest
 
@@ -399,8 +457,19 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "query" : {
+            "expression" : "guid = :guid",
+            "expressionValues" : {
+              ":guid" : {"S": "$context.arguments.guid"}
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbGetDetailText
 
@@ -411,8 +480,22 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "timest",
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "blogsource = :bs and timest = :ts",
+            "expressionValues" : {
+              ":bs" : { "S" : "$context.arguments.blogsource" },
+              ":ts" : { "N" : 0 }
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountPerBlog
 
@@ -423,8 +506,22 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "visible",
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "visible = :visible and timest = :ts",
+            "expressionValues" : {
+              ":visible" : { "S" : "y" },
+              ":ts" : { "N" : 0 }
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountAll
 
@@ -432,11 +529,35 @@ Resources:
     Condition: EnableAppSync
     Type: 'AWS::AppSync::Resolver'
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbByProvider-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbByProvider-response.vtl'
+      RequestMappingTemplate: |
+        #set($filter = {"expression": "#published = :published", "expressionNames": {"#published": "visible"}, "expressionValues": {":published": {"S": "y"}}})
+        #set($limit = $util.defaultIfNull($ctx.args.limit, 100))
+        #if($limit < 1 || $limit > 101)
+          $util.error("limit must be between 1 and 101", "BadRequest")
+        #end
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "index": "provider-timest",
+          "limit": $limit,
+          "scanIndexForward": false,
+          "select": "ALL_PROJECTED_ATTRIBUTES",
+          "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "provider", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.provider), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
+          "filter": $util.toJson($filter),
+          "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
+        }
+      ResponseMappingTemplate: |
+        #if($ctx.error)
+          $util.error($ctx.error.message, $ctx.error.type)
+        #end
+        #foreach($item in $ctx.result.items)
+          $util.qr($item.put("description", $util.defaultIfNull($item.preview, "")))
+        #end
+        $util.toJson($ctx.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: blogsByProvider
 
