@@ -4,6 +4,7 @@ from provider_feed import add_provider
 # www.marek.rocks
 
 import botocore, boto3, feedparser
+import hashlib
 import json, os, re, readability, requests
 import sys, time
 
@@ -30,6 +31,8 @@ DYNAMODB_KEY_TYPES = {
 	'visible': 'S',
 	'provider': 'S',
 }
+DYNAMODB_ITEM_SIZE_LIMIT = 400 * 1024
+DYNAMODB_ITEM_SIZE_WARNING = 350 * 1024
 
 
 # get the RSS feed through feedparser
@@ -37,20 +40,89 @@ def get_rss(url):
 	return feedparser.parse(url)
 
 
+def _item_size_bytes(serialized_item):
+	"""Return a conservative, loggable size estimate for a DynamoDB item."""
+	return len(json.dumps(serialized_item, ensure_ascii=True, separators=(',', ':')).encode('utf-8'))
+
+
+def _guid_label(guid):
+	guid = str(guid)
+	if len(guid) <= 120:
+		return guid
+	return guid[:72] + '...' + guid[-32:]
+
+
+def _text(value, fallback=''):
+	return fallback if value is None else str(value)
+
+
+def _item_diagnostics(serialized_item, guid, blogsource, timest_post):
+	field_sizes = sorted(
+		(
+			(key, len(json.dumps(value, ensure_ascii=True, separators=(',', ':')).encode('utf-8')))
+			for key, value in serialized_item.items()
+		),
+		key=lambda field: field[1],
+		reverse=True,
+	)
+	return {
+		'blogsource': blogsource,
+		'guid': _guid_label(guid),
+		'guid_sha256': hashlib.sha256(str(guid).encode('utf-8')).hexdigest()[:16],
+		'timest': timest_post,
+		'item_wire_json_bytes': _item_size_bytes(serialized_item),
+		'key_types': {
+			key: next(iter(serialized_item[key]), None)
+			for key in DYNAMODB_KEY_TYPES
+			if key in serialized_item
+		},
+		'largest_fields': field_sizes[:3],
+	}
+
+
+def _log_item_issue(stage, guid, blogsource, timest_post, error=None, serialized_item=None):
+	diagnostic = {
+		'event': 'dynamodb_item_issue',
+		'stage': stage,
+		'blogsource': blogsource,
+		'guid': _guid_label(guid),
+		'guid_sha256': hashlib.sha256(str(guid).encode('utf-8')).hexdigest()[:16],
+		'timest': timest_post,
+	}
+	if serialized_item is not None:
+		diagnostic.update(_item_diagnostics(serialized_item, guid, blogsource, timest_post))
+	if error is not None:
+		diagnostic.update({'error_type': type(error).__name__, 'error': str(error)})
+	print('dynamodb_item_issue ' + json.dumps(diagnostic, sort_keys=True, ensure_ascii=True))
+
+
 # write the blogpost record atomically and idempotently
 def put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post):
 	# Feedparser fields are not guaranteed to be plain scalars. Normalize every
-	# value used by a DynamoDB key before constructing the item.
-	guid = str(guid)
-	blogsource = str(blogsource)
-	timest_post = int(timest_post)
+	# value before constructing the item so serialization cannot turn metadata
+	# into an unexpected DynamoDB map/list type.
+	guid = _text(guid)
+	blogsource = _text(blogsource)
+	try:
+		timest_post = int(timest_post)
+	except Exception as error:
+		_log_item_issue('normalize', guid, blogsource, timest_post, error=error)
+		raise
+	title = _text(title)
+	description = _text(description, '...')
+	link = _text(link)
+	author = _text(author)
+	tags = _text(tags)
+	category = _text(category)
+	datestr_post = _text(datestr_post)
 	if not guid:
-		raise ValueError('article guid must not be empty')
+		error = ValueError('article guid must not be empty')
+		_log_item_issue('normalize', guid, blogsource, timest_post, error=error)
+		raise error
 	if not blogsource:
-		raise ValueError('article blogsource must not be empty')
-
-	if not description:
-		description = '...'
+		error = ValueError('article blogsource must not be empty')
+		_log_item_issue('normalize', guid, blogsource, timest_post, error=error)
+		raise error
 
 	fullitem = {
 		'objectID' : guid,
@@ -76,7 +148,11 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 		fullitem.pop('lower-tag', None)
 		fullitem.pop('tag', None)
 
-	serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
+	try:
+		serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
+	except Exception as error:
+		_log_item_issue('serialize', guid, blogsource, timest_post, error=error)
+		raise
 
 	# Set the two table-key values explicitly as AttributeValue objects. This is
 	# intentionally redundant with TypeSerializer: it makes the contract clear
@@ -87,14 +163,28 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	key_type_errors = []
 	for key, expected_type in DYNAMODB_KEY_TYPES.items():
 		if key not in serialized_item:
+			if key != 'provider':
+				key_type_errors.append(f'{key}: missing')
 			continue
 		actual = serialized_item[key]
 		if set(actual) != {expected_type}:
 			key_type_errors.append(
 				f'{key}: expected {expected_type}, got {json.dumps(actual, sort_keys=True)}'
 			)
+		elif expected_type == 'S' and not actual[expected_type]:
+			key_type_errors.append(f'{key}: must not be empty')
 	if key_type_errors:
-		raise ValueError('invalid DynamoDB key types: ' + '; '.join(key_type_errors))
+		error = ValueError('invalid DynamoDB key types: ' + '; '.join(key_type_errors))
+		_log_item_issue('key_validation', guid, blogsource, timest_post, error=error, serialized_item=serialized_item)
+		raise error
+
+	item_size = _item_size_bytes(serialized_item)
+	if item_size >= DYNAMODB_ITEM_SIZE_WARNING:
+		_log_item_issue('size_check', guid, blogsource, timest_post, serialized_item=serialized_item)
+	if item_size > DYNAMODB_ITEM_SIZE_LIMIT:
+		error = ValueError(f'DynamoDB item exceeds the {DYNAMODB_ITEM_SIZE_LIMIT}-byte limit')
+		_log_item_issue('size_validation', guid, blogsource, timest_post, error=error, serialized_item=serialized_item)
+		raise error
 
 	try:
 		ddb.meta.client.transact_write_items(
@@ -115,7 +205,15 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	except ClientError as error:
 		if error.response['Error']['Code'] == 'TransactionCanceledException':
 			reasons = error.response.get('CancellationReasons', [])
-			print('transaction cancellation reasons for ' + guid + ': ' + json.dumps(reasons))
+			diagnostic = _item_diagnostics(serialized_item, guid, blogsource, timest_post)
+			diagnostic.update({
+				'event': 'dynamodb_transaction_failed',
+				'error_code': error.response['Error'].get('Code'),
+				'error_message': error.response['Error'].get('Message'),
+				'cancellation_codes': [reason.get('Code') for reason in reasons],
+				'cancellation_messages': [reason.get('Message') for reason in reasons if reason.get('Message')],
+			})
+			print('dynamodb_transaction_failed ' + json.dumps(diagnostic, sort_keys=True, ensure_ascii=True))
 			if reasons and reasons[0].get('Code') == 'ConditionalCheckFailed':
 				print('skipping duplicate article ' + guid)
 				return False
