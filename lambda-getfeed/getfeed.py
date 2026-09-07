@@ -5,21 +5,19 @@ from provider_feed import add_provider, preview_text
 
 import botocore, boto3, feedparser
 import hashlib
-import json, os, re, readability, requests
-import sys, time
+import json, os, re
+import calendar
+import time
 
 from boto3.dynamodb.types import TypeSerializer
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
 
-# establish a session with SES, DynamoDB and Comprehend
+# Establish service clients once per Lambda execution environment.
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
 # Resource clients install automatic serialization hooks. Transactions below
 # already contain AttributeValues, so use a separate low-level client.
 ddb_transactions = boto3.client('dynamodb', region_name=os.environ['dynamo_region'])
-com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
 s3 = boto3.client('s3')
 serializer = TypeSerializer()
@@ -270,67 +268,6 @@ def refresh_counter(blogsource):
 	print('refreshed ' + blogsource + ' article count to ' + str(count))
 
 
-# retrieve the url of a blogpost
-def retrieve_url(url):
-
-	# set a "real" user agent
-	firefox = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:79.0) Gecko/20100101 Firefox/79.0"
-
-	try:
-		# retrieve the main text section from the url using the readability module and using the Chrome user agent
-		req = requests.get(url, headers = {'User-Agent' : firefox})
-		doc = readability.Document(req.text)
-		rawhtml = doc.summary(html_partial = True)
-
-		# remove any html tags from output
-		soup = BeautifulSoup(rawhtml, 'html.parser')
-		cleantext = soup.get_text().strip('\n').encode('utf-8')
-
-		return str(rawhtml), str(cleantext)
-
-	except requests.exceptions.ConnectionError as e:
-		# log the connection error and return empty strings to prevent breaking the entire lambda
-		print(f'ConnectionError while retrieving URL {url}: {str(e)}')
-		return '', ''
-
-	except Exception as e:
-		# catch any other exceptions that might occur during URL retrieval
-		print(f'Error while retrieving URL {url}: {str(e)}')
-		return '', ''
-
-
-# analyze the text of a blogpost using the AWS Comprehend service
-def comprehend(cleantxt, title):
-	detections = []
-	found = False
-
-	fulltext = title + " " + cleantxt
-
-	# cut down the text to less than 5000 bytes as this is the file limit for Comprehend
-	strlen = sys.getsizeof(fulltext)
-
-	while strlen > 5000:
-		fulltext = fulltext[:-1]
-		strlen = sys.getsizeof(fulltext)
-
-	# check whether organization or title labels were found by Comprehend
-	for x in com.detect_entities(Text = fulltext, LanguageCode = 'en')['Entities']:
-		if x['Type'] == 'ORGANIZATION' or x['Type'] == 'TITLE' or x['Type'] == 'COMMERCIAL_ITEM' or x['Type'] == 'PERSON':
-			if x['Text'] not in detections:
-				detections.append(x['Text'])
-				found = True
-
-	# if no tags were retrieved, add a default tag
-	if found:
-		tags = ', '.join(detections)
-		
-	else:
-		tags = 'none'
-
-	# return tag values	
-	return(tags)
-
-
 # send an email out whenever a new blogpost was found - this feature is optional
 def send_email(recpt, title, blogsource, author, description, link, datestr_post):
 	# RSS preview only: extracted page HTML can contain megabytes of embedded
@@ -363,28 +300,60 @@ def send_email(recpt, title, blogsource, author, description, link, datestr_post
 
 
 # main function to kick off collection of an rss feed
-def get_feed(url, blogsource, guids):
+def existing_articles(blogsource):
+	guids, links = set(), set()
+	args = {'IndexName': 'timest', 'ProjectionExpression': 'guid, link',
+		'KeyConditionExpression': Key('blogsource').eq(blogsource) & Key('timest').gt(0)}
+	while True:
+		page = ddb.query(**args)
+		for item in page.get('Items', []):
+			guids.add(item['guid'])
+			if item.get('link'):
+				links.add(item['link'])
+		if 'LastEvaluatedKey' not in page:
+			return guids, links
+		args['ExclusiveStartKey'] = page['LastEvaluatedKey']
+
+
+def get_feed(url, blogsource):
+	guids, links = existing_articles(blogsource)
+	stats = {'found': 0, 'inserted': 0, 'duplicates': 0, 'outside_window': 0, 'emails_sent': 0, 'email_failures': 0}
+
 
 	# create a variable about blog update and list to store new blogs
 	blogupdate = False
-	newblogs = []
+	# Return compact counts rather than article IDs.
 
 	# get the rss feed
 	rssfeed = get_rss(url)
 
-	print('found ' + str(len(rssfeed['entries'])) + ' blog entries')
+	stats['found'] = len(rssfeed['entries'])
 
 	# check all the retrieved articles for published dates
 	for x in rssfeed['entries']:
 
 		# retrieve post guid
-		guid = str(x['guid'])
-		timest_post = int(time.mktime(x['updated_parsed']))
+		link = str(x.get('link', ''))
+		guid = str(x.get('guid') or x.get('id') or link)
+		if not guid:
+			raise ValueError('RSS entry has neither GUID nor link')
+		if guid in guids or (link and link in links):
+			stats['duplicates'] += 1
+			continue
+		# Primary-key lookup covers secondary-index propagation delay.
+		if ddb.query(KeyConditionExpression=Key('guid').eq(guid),
+			ConsistentRead=True, Select='COUNT', Limit=1)['Count']:
+			stats['duplicates'] += 1
+			continue
+		published = x.get('published_parsed') or x.get('updated_parsed')
+		if not published:
+			raise ValueError('RSS entry has no publication date: ' + _guid_label(guid))
+		timest_post = calendar.timegm(published)
 		timest_now = int(time.time())
 
-		datestr_post = time.strftime('%d-%m-%Y %H:%M', x['updated_parsed'])
+		datestr_post = time.strftime('%d-%m-%Y %H:%M', published)
 
-		if guid not in guids and (timest_now < (timest_post + (86400 * days_to_retrieve))):
+		if timest_now < (timest_post + (86400 * days_to_retrieve)):
 
 			link = str(x['link'])
 			title = str(x['title']).replace('"', "'")
@@ -393,7 +362,7 @@ def get_feed(url, blogsource, guids):
 			print('retrieving '+str(title)+' in '+str(blogsource)+' using url '+str(link)+'\n')
 			tags = ''
 
-			description = re.sub(r'<[^>]+>', '', str(x['description'])).strip('&nbsp;').replace('"', "'").strip('\n')
+			description = re.sub(r'<[^>]+>', '', str(x.get('description', x.get('summary', '')))).strip('&nbsp;').replace('"', "'").strip('\n')
 
 			category = 'none'
 			if 'tags' in x:
@@ -402,15 +371,25 @@ def get_feed(url, blogsource, guids):
 			inserted = put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post)
 			if inserted:
 				blogupdate = True
-				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
+				stats['inserted'] += 1
+				guids.add(guid)
+				if link:
+					links.add(link)
 
 				if send_mail == 'y':
 					try:
 						send_email(os.environ['toemail'], title, blogsource, author, description, link, datestr_post)
+						stats['emails_sent'] += 1
 					except ClientError as error:
+						stats['email_failures'] += 1
 						print(json.dumps({'event': 'email_delivery_failed', 'blogsource': blogsource,
 							'guid': _guid_label(guid), 'error_code': error.response['Error'].get('Code'),
 							'aws_request_id': error.response.get('ResponseMetadata', {}).get('RequestId')}))
+
+			else:
+				stats['duplicates'] += 1
+		else:
+			stats['outside_window'] += 1
 
 	# Counters are derived data. Refreshing them after the feed finishes avoids
 	# allowing a malformed legacy counter to abort an otherwise valid article write.
@@ -419,30 +398,12 @@ def get_feed(url, blogsource, guids):
 	except Exception as error:
 		print('could not refresh ' + blogsource + ' article count: ' + str(error))
 
-	return blogupdate, newblogs
-
-
-# check if new items were uploaded to s3
-def get_s3_json_age():
-	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
-	print('get s3 list ' + str(s3list))
-
-	if 'Contents' in s3list:
-		nowtime = int(time.time())
-		for s3file in s3list['Contents']:
-			objtime = int(time.mktime(s3file['LastModified'].timetuple()))
-			difftime = nowtime - objtime
-			print(str(difftime) + " " + str(s3file['Key']))
-
-			if difftime < 300:
-				return True
-
-	return False
+	return blogupdate, stats
 
 
 # get the contents of the dynamodb table for json object on S3
 def get_table_json(blogsource):
-	s3guids = []
+	s3guids = set()
 	res = []
 
 	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
@@ -451,11 +412,12 @@ def get_table_json(blogsource):
 	if blogsource + '.json' in s3files:
 		s3obj = s3.get_object(Bucket = os.environ['s3bucket'], Key = blogsource + '.json')
 		res = json.loads(s3obj['Body'].read())
-		s3guids = [item['guid'] for item in res]
+		s3guids = {item['guid'] for item in res}
 	else:
 		print('could not find ' + blogsource + '.json file on s3')
 
-	diff_ts = int(time.mktime((datetime.now() - timedelta(days = int(days_to_retrieve))).timetuple()))
+	# A missing export needs the complete table history, not just today's posts.
+	diff_ts = int(time.time()) - 86400 * int(days_to_retrieve) if res else 0
 
 	projection = 'blogsource, datestr, timest, title, author, description, link, guid'
 
@@ -469,6 +431,7 @@ def get_table_json(blogsource):
 	while True:
 		for a in blogs['Items']:
 			if a['guid'] not in s3guids:
+				s3guids.add(a['guid'])
 				res.append({'timest': str(a['timest']), 'blogsource': a['blogsource'], 'title': a['title'],
 					'datestr': a['datestr'], 'guid': a['guid'], 'author': a['author'], 'link': a['link'],
 					'description': a['description'].strip()})
@@ -535,8 +498,9 @@ def handler(event, context):
 
 	if event['msg'] == 'all':
 		blogsource = 'all'
-		blogupdate = get_s3_json_age()
-		newblogs = ''
+		blogupdate = True
+		days_to_retrieve = int(event.get('daystoretrieve', 1))
+		newblogs = {'refreshed': 'all.json'}
 		try:
 			refresh_counter('all')
 		except Exception as error:
@@ -544,13 +508,12 @@ def handler(event, context):
 	else:
 		url = event['msg']['url']
 		blogsource = event['msg']['blogsource']
-		guids = event['guids']
 		days_to_retrieve = int(event['msg']['daystoretrieve'])
 		send_mail = event['sendemail']
-		blogupdate, newblogs = get_feed(url, blogsource, guids)
+		blogupdate, newblogs = get_feed(url, blogsource)
 
-	if blogupdate:
-		print('updating json output on s3 for ' + blogsource)
-		update_json_s3(blogsource)
+	# Rebuild exports even on an all-duplicate retry: an earlier invocation may
+	# have written articles successfully and failed before publishing its JSON.
+	update_json_s3(blogsource)
 
 	return newblogs

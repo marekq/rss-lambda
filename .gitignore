@@ -2,3 +2,5 @@ packaged.yaml
 lambda/libs
 samconfig.toml
 .aws-sam/
+__pycache__/
+*.pyc

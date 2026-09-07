@@ -1,8 +1,8 @@
 {
   "Comment": "Discover RSS feeds, process them with bounded concurrency, refresh JSON, and report partial failures",
-  "StartAt": "Discover Blog Feeds",
+  "StartAt": "Prepare Feed Run",
   "States": {
-    "Discover Blog Feeds": {
+    "Prepare Feed Run": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "TimeoutSeconds": 45,
@@ -21,17 +21,15 @@
         }
       ],
       "Parameters": { "FunctionName": "${rsscrawl}", "Payload": { "msg.$": "$" } },
-      "Next": "Get RSS Blog Feed"
+      "Next": "Process Feeds"
     },
-    "Get RSS Blog Feed": {
+    "Process Feeds": {
       "Type": "Map",
       "ItemsPath": "$.results",
       "MaxConcurrency": 8,
-      "Next": "Run all.json Refresh",
+      "Next": "Refresh Combined Article Index",
       "ItemSelector": {
         "msg.$": "$$.Map.Item.Value",
-        "guids.$": "$.guids",
-        "daystoretrieve.$": "$.daystoretrieve",
         "sendemail.$": "$.sendemail"
       },
       "ResultPath": "$.feedResults",
@@ -39,9 +37,9 @@
         "ProcessorConfig": {
           "Mode": "INLINE"
         },
-        "StartAt": "Get RSS Blogs",
+        "StartAt": "Import New Articles",
         "States": {
-          "Get RSS Blogs": {
+          "Import New Articles": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
             "TimeoutSeconds": 330,
@@ -61,7 +59,7 @@
             ],
             "Parameters": {
               "FunctionName": "${rssgetfeed}",
-              "Payload": { "msg.$": "$.msg", "guids.$": "$.guids", "sendemail.$": "$.sendemail" }
+              "Payload": { "msg.$": "$.msg", "sendemail.$": "$.sendemail" }
             },
             "Next": "Feed Succeeded",
             "Catch": [
@@ -77,7 +75,7 @@
             "Parameters": {
               "status": "succeeded",
               "blogsource.$": "$.msg.blogsource",
-              "items.$": "$.result.Payload"
+              "counts.$": "$.result.Payload"
             },
             "End": true
           },
@@ -93,7 +91,7 @@
         }
       }
     },
-    "Run all.json Refresh": {
+    "Refresh Combined Article Index": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "TimeoutSeconds": 330,
@@ -111,10 +109,10 @@
           "MaxAttempts": 3
         }
       ],
-      "Parameters": { "FunctionName": "${rssgetfeed}", "Payload": { "msg": "all" } },
-      "Next": "Any Feed Failed"
+      "Parameters": { "FunctionName": "${rssgetfeed}", "Payload": { "msg": "all", "daystoretrieve.$": "$.daystoretrieve" } },
+      "Next": "Check Feed Results"
     },
-    "Any Feed Failed": {
+    "Check Feed Results": {
       "Type": "Choice",
       "QueryLanguage": "JSONata",
       "Choices": [
@@ -123,14 +121,14 @@
           "Next": "Feed Failure"
         }
       ],
-      "Default": "Finish"
+      "Default": "Run Completed"
     },
     "Feed Failure": {
       "Type": "Fail",
       "Error": "FeedItemsFailed",
       "Cause": "One or more RSS feeds failed after retries; all.json was refreshed for the feeds that completed."
     },
-    "Finish": {
+    "Run Completed": {
       "Type": "Succeed"
     }
   }

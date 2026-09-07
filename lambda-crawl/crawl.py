@@ -1,113 +1,22 @@
-#!/usr/bin/python
-# @marekq
-# www.marek.rocks
-
-import botocore, boto3
-import os, queue, threading, time
-
-from boto3.dynamodb.conditions import Key
-
-# establish a session with SES, DynamoDB and Comprehend
-ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
-s3 = boto3.client('s3')
+"""Build a compact feed worklist; workers check DynamoDB themselves."""
+import os
+from pathlib import Path
 
 
-# create a queue for multiprocessing
-q1 = queue.Queue()
-
-
-# get the blogpost guids that are already stored in DynamoDB table
-def get_guids(ts):
-	guids = set()
-	queryres = ddb.query(ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid',
-		KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(ts))
-
-	while True:
-		for x in queryres['Items']:
-			if 'guid' in x:
-				guids.add(x['guid'])
-
-		if 'LastEvaluatedKey' not in queryres:
-			break
-
-		queryres = ddb.query(ExclusiveStartKey = queryres['LastEvaluatedKey'], ScanIndexForward = True,
-			IndexName = 'visible', ProjectionExpression = 'guid',
-			KeyConditionExpression = Key('visible').eq('y') & Key('timest').gt(ts))
-
-	print('guids found in last day : '+str(len(guids)))
-	return list(guids)
-
-
-# read the url's from 'feeds.txt' stored in the lambda function
-def read_feed():
-	result = {}
-	with open('feeds.txt') as fp:
-		for line in fp:
-			src, url = line.split(',')
-			result[src.strip()] = url.strip()
-
-	count = min(len(result), 50)
-	return result, count
-
-# get the contents of the dynamodb table for json object on S3
-def get_feed(x):
-	url, blogsource = x
-	ts_multiplier = 1 if blogsource + '.json' in s3files else 86400
-	ts_old = int(time.time()) - (days_to_retrieve * ts_multiplier)
-
-	print(ts_old, url, blogsource)
-	res.append({'ts': ts_old, 'url': url, 'blogsource': blogsource, 'daystoretrieve': days_to_retrieve})
-
-# worker for queue jobs
-def worker():
-	while not q1.empty():
-		get_feed(q1.get())
-		q1.task_done()
-
-# lambda handler
 def handler(event, context):
-	global days_to_retrieve, send_email, res, s3files
-
-	days_to_retrieve = 1
-	send_email = os.environ['sendemails']
-
-	try:
-		days = int(event['msg']['days'])
-		days_to_retrieve = days
-
-	except (KeyError, ValueError) as e:
-		print('failed to get valid days input value from step function, proceeding with default value of 1')
-
-	try:
-		if event.get('email') in ('y', 'yes'):
-			send_email = 'y'
-			print('sending emails based on state machine input')
-	except Exception:
-		print('failed to get valid send email input value from step function')
-
-	print('sending emails: ' + str(send_email))
-
-	res = []
-	s3list = s3.list_objects(Bucket = os.environ['s3bucket'])
-	s3files = s3list
-
-	ts_old = int(time.time()) - (86400 * days_to_retrieve)
-	guids = get_guids(ts_old)
-
-	feeds, thr = read_feed()
-
-	for blogsource, url in feeds.items():
-		q1.put([url, blogsource])
-
-	for _ in range(thr):
-		t = threading.Thread(target = worker)
-		t.daemon = True
-		t.start()
-	q1.join()
-
-	return {
-		'results': res,
-		'guids': guids,
-		'daystoretrieve': str(days_to_retrieve),
-		'sendemail': send_email
-	}
+    options = event.get('msg', event)
+    days = int(options.get('days', 1))
+    if days < 1:
+        raise ValueError('days must be a positive integer')
+    # Backfills are quiet unless explicitly requested otherwise.
+    email = options.get('email', 'n' if days > 1 else os.environ['sendemails'])
+    if email not in ('y', 'yes', 'n', 'no', True, False):
+        raise ValueError('email must be y/n, yes/no, or a boolean')
+    feeds = []
+    for line in Path(__file__).with_name('feeds.txt').read_text().splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        source, url = line.split(',', 1)
+        feeds.append({'url': url.strip(), 'blogsource': source.strip(), 'daystoretrieve': days})
+    return {'results': feeds, 'daystoretrieve': days,
+            'sendemail': 'y' if email in ('y', 'yes', True) else 'n'}

@@ -50,7 +50,6 @@ Resources:
               Action:
                 - 'ses:SendEmail'
               Resource: '*'
-        - ComprehendFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
         - Version: '2012-10-17'
@@ -109,12 +108,7 @@ Resources:
       Handler: crawl.handler
       Runtime: python3.14
       CodeUri: lambda-crawl/
-      Description: 'Retrieve RSS feeds and check files stored on S3'
-      Policies:
-        - DynamoDBReadPolicy:
-            TableName: !Ref rssfeed
-        - S3ReadPolicy:
-            BucketName: !Ref PublicJsonBucket
+      Description: 'Prepare RSS feed worklist and notification options'
       MemorySize: 256
       Timeout: 30
       Architectures:
@@ -129,26 +123,6 @@ Resources:
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-
-  # refresh pagecount stored in dynamodb using a manual lambda invoke
-  pagecount:
-    Type: 'AWS::Serverless::Function'
-    Properties:
-      Handler: pagecount.handler
-      Runtime: python3.14
-      CodeUri: lambda-pagecount/
-      Description: 'Retrieve the total article count for blogs stored in DynamoDB'
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref rssfeed
-      MemorySize: 256
-      Timeout: 30
-      Environment:
-        Variables:
-          dynamo_region: !Ref 'AWS::Region'
-          dynamo_table: !Ref rssfeed
-      Tracing: Active
-      ReservedConcurrentExecutions: 1
 
   # create lambda layer with dependencies
   lambdalayer:

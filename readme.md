@@ -5,18 +5,31 @@ Monitor blogs through RSS and store new posts in DynamoDB. The workflow can also
 
 The default feed list includes AWS, Google, and Wiz security feeds. Add or remove feeds in `lambda-crawl/feeds.txt`; each line contains a source name and RSS URL separated by a comma.
 
-The feed retrieval Lambda stores article metadata and a bounded plain-text preview in DynamoDB; it does not persist the fetched source HTML, full article text, or unbounded RSS descriptions. The frontend retrieves readable content from the live article URL when a row is expanded and uses the stored preview only as a fallback. If SES notifications are enabled, the fetched HTML is still used in memory for the email and is not written to DynamoDB. When a new article is found, the workflow also refreshes the source JSON file and the combined `all.json` file in the S3 bucket.
+The feed retrieval Lambda stores article metadata and a bounded plain-text preview in DynamoDB; it does not persist the fetched source HTML, full article text, or unbounded RSS descriptions. The frontend retrieves readable content from the live article URL when a row is expanded and uses the stored preview only as a fallback. SES notifications contain only a bounded plain-text preview and article link. When a new article is found, the workflow also refreshes the source JSON file and the combined `all.json` file in the S3 bucket.
 
 The workflow processes feeds with bounded concurrency and retries only transient Lambda service failures. A failed individual feed is recorded while successful feeds still refresh the JSON output; the overall execution then fails so the SES alert is sent. Article writes use a conditional DynamoDB transaction, making retries safe from duplicate records. Derived article counters are recalculated after each feed and after the combined `all.json` refresh, so malformed legacy counter values cannot abort article ingestion.
 
+
+Reruns and backfills
+-------------------
+
+Start Step Functions with `{"days": 365, "email": "n"}` for a quiet backfill. Multi-day runs default to no article emails; `{"days": 365}` is also quiet. Explicit `"email": "y"` enables notifications only for newly inserted articles. One-day scheduled runs retain the deployed SendEmails default.
+
+Workers query all stored GUIDs and exact links for their feed, regardless of the retrieval window or visibility, and skip matches before writing or sending mail. A consistent primary-key lookup also checks GUIDs before insertion. Conditional writes protect same-key races. Avoid overlapping backfills when a publisher changes both identifiers or timestamps: this is not a cross-feed canonical-URL uniqueness constraint. The requested window filters entries still available in the publisher's RSS feed; it cannot recover a year of posts from a feed that only exposes its latest entries.
+
+Step Functions retains compact per-feed counts (found, inserted, duplicates, outside_window, emails_sent, email_failures), not every article GUID/title. It prepares the worklist, processes feeds, refreshes the combined article index, and checks failures. `all.json` is the public combined S3 index, not another crawl. Source and combined exports are refreshed on reruns using the same requested window while preserving older exported entries.
+
+Failure alerts are separate from article notifications: `"email": "n"` does not disable operational alerts. SES must verify the configured sender in the deployment region. Earlier alerts were rejected because the old sender was unverified; production now uses the verified sender restored in the deployment buildspec. Mock tests exercise alert formatting without sending real mail.
+
+Run regression tests with `python -m unittest discover -s tests -v` after installing `boto3` and `feedparser`.
 
 Installation
 ------------
 
 - Install and configure the AWS SAM CLI, Docker, and AWS credentials for the target account.
 - Edit `lambda-crawl/feeds.txt` if you want to change the monitored feeds.
-- Run `make init` for the first deployment. SAM will prompt for the stack name, region, and parameter values, then save them in the ignored `samconfig.toml` file.
-- Run `make deploy` for subsequent deployments.
+- Run `sam build && sam deploy --guided` for an initial manual deployment.
+- Production deployment is automated by pushes to `master` through CodePipeline.
 
 The template parameters are:
 
@@ -76,7 +89,7 @@ aws codepipeline start-pipeline-execution \
   --name "$PIPELINE_NAME"
 ```
 
-The first deployment should be monitored in CodePipeline and CloudFormation. Keep the stack execution role stable; changing it outside the pipeline can cause CloudFormation rollback or tagging failures. For this repository, use either this CodePipeline workflow or direct `make deploy` for `rssgraph2`, not both.
+The first deployment should be monitored in CodePipeline and CloudFormation. Keep the stack execution role stable; changing it outside the pipeline can cause CloudFormation rollback or tagging failures. For this repository, use either this CodePipeline workflow or direct `sam build && sam deploy` for `rssgraph2`, not both.
 
 
 Repository contents
@@ -87,7 +100,7 @@ Repository contents
 - `pipeline/buildspec.yml` packages and deploys the SAM application from CodeBuild.
 - `lambda-crawl/` contains the function that discovers feeds and determines the retrieval window.
 - `lambda-getfeed/` contains the function that retrieves and stores individual feed entries.
-- `lambda-pagecount/` contains the manually invoked counter-refresh function.
+- `lambda-alert/` sends workflow failure alerts through SES.
 - `statemachine/` contains the Standard Step Functions definition.
 - `lambda-layer/` contains the shared Python dependency list for the feed retrieval functions.
 - `graphql/` contains the AppSync schema and VTL resolver templates used as source/reference files.
