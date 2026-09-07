@@ -16,6 +16,9 @@ from bs4 import BeautifulSoup
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
+# Resource clients install automatic serialization hooks. Transactions below
+# already contain AttributeValues, so use a separate low-level client.
+ddb_transactions = boto3.client('dynamodb', region_name=os.environ['dynamo_region'])
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
 s3 = boto3.client('s3')
@@ -31,7 +34,6 @@ DYNAMODB_KEY_TYPES = {
 	'visible': 'S',
 	'provider': 'S',
 }
-DYNAMODB_ITEM_SIZE_LIMIT = 400 * 1024
 DYNAMODB_ITEM_SIZE_WARNING = 350 * 1024
 
 
@@ -181,13 +183,11 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	item_size = _item_size_bytes(serialized_item)
 	if item_size >= DYNAMODB_ITEM_SIZE_WARNING:
 		_log_item_issue('size_check', guid, blogsource, timest_post, serialized_item=serialized_item)
-	if item_size > DYNAMODB_ITEM_SIZE_LIMIT:
-		error = ValueError(f'DynamoDB item exceeds the {DYNAMODB_ITEM_SIZE_LIMIT}-byte limit')
-		_log_item_issue('size_validation', guid, blogsource, timest_post, error=error, serialized_item=serialized_item)
-		raise error
+	# Wire JSON is larger than stored data (especially escaped Unicode).
+	# Use it for diagnostics only; DynamoDB enforces the actual 400 KiB limit.
 
 	try:
-		ddb.meta.client.transact_write_items(
+		ddb_transactions.transact_write_items(
 			TransactItems=[
 				{
 					'Put': {
@@ -205,18 +205,19 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	except ClientError as error:
 		if error.response['Error']['Code'] == 'TransactionCanceledException':
 			reasons = error.response.get('CancellationReasons', [])
+			if reasons and reasons[0].get('Code') == 'ConditionalCheckFailed':
+				print('skipping duplicate article ' + guid)
+				return False
 			diagnostic = _item_diagnostics(serialized_item, guid, blogsource, timest_post)
 			diagnostic.update({
 				'event': 'dynamodb_transaction_failed',
 				'error_code': error.response['Error'].get('Code'),
+				'aws_request_id': error.response.get('ResponseMetadata', {}).get('RequestId'),
 				'error_message': error.response['Error'].get('Message'),
 				'cancellation_codes': [reason.get('Code') for reason in reasons],
 				'cancellation_messages': [reason.get('Message') for reason in reasons if reason.get('Message')],
 			})
 			print('dynamodb_transaction_failed ' + json.dumps(diagnostic, sort_keys=True, ensure_ascii=True))
-			if reasons and reasons[0].get('Code') == 'ConditionalCheckFailed':
-				print('skipping duplicate article ' + guid)
-				return False
 		raise
 
 
