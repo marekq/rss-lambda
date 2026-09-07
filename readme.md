@@ -8,21 +8,6 @@ The default feed list includes AWS, Google, and Wiz security feeds. Add or remov
 The feed retrieval Lambda uses `readability-lxml` to extract article content. It stores the title, description, metadata, cleaned text, and source HTML in DynamoDB. When a new article is found, the workflow also refreshes the source JSON file and the combined `all.json` file in the S3 bucket.
 
 
-![Architecture](./docs/architecture.png)
-
-
-The DynamoDB table stores each article's metadata and extracted content. The larger HTML and text fields are omitted from the diagram.
-
-
-![DynamoDB item](./docs/dynamodb.png)
-
-
-The Step Functions workflow coordinates feed discovery, parallel feed retrieval, and the combined JSON refresh.
-
-
-![State machine](./docs/statemachine.png)
-
-
 Installation
 ------------
 
@@ -78,7 +63,6 @@ Repository contents
 - `statemachine/` contains the Standard Step Functions definition.
 - `lambda-layer/` contains the shared Python dependency list for the feed retrieval functions.
 - `graphql/` contains the AppSync schema and VTL resolver templates used as source/reference files.
-- `docs/` contains architecture and data-flow diagrams.
 
 
 License
