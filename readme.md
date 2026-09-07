@@ -45,7 +45,7 @@ Repository contents
 -------------------
 
 - `template.yaml` is the SAM/CloudFormation deployment source.
-- `gitsync-deployment.yaml` contains the production parameters and tags used by CloudFormation Git sync.
+- `deploy/gitsync-deployment.yaml` contains the production parameters and tags used by CloudFormation Git sync. Configure this full repository path when connecting the stack; choose the AWS Region in the Git sync stack configuration rather than in this file.
 - `lambda-crawl/` contains the function that discovers feeds and determines the retrieval window.
 - `lambda-getfeed/` contains the function that retrieves and stores individual feed entries.
 - `lambda-pagecount/` contains the manually invoked counter-refresh function.
