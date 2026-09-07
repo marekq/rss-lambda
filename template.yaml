@@ -71,7 +71,7 @@ Resources:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: getfeed.handler
-      Runtime: python3.8
+      Runtime: python3.12
       CodeUri: lambda-getfeed/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
@@ -82,68 +82,78 @@ Resources:
                 - 'ses:SendEmail'
               Resource: '*'
         - ComprehendFullAccess
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
         - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 512
-      Timeout: 30
+      Timeout: 300
+      Architectures:
+        - arm64
       Environment:
         Variables:
           dynamo_table: !Ref rssfeed
+          dynamo_region: !Ref 'AWS::Region'
+          s3bucket: !Ref PublicJsonBucket
+          fromemail: !Ref SourceEmail
+          toemail: !Ref DestEmail
+          storepublics3: !Ref StorePublicS3
+          POWERTOOLS_SERVICE_NAME: rssgetfeed
+          POWERTOOLS_TRACE_DISABLED: "false"
          
       Tracing: Active
       ReservedConcurrentExecutions: 50
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # create rss feed crawl function
   rsscrawl:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: crawl.handler
-      Runtime: python3.8
+      Runtime: python3.12
       CodeUri: lambda-crawl/
       Description: 'Retrieve RSS feeds and check files stored on S3'
       Policies:
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBReadPolicy:
             TableName: !Ref rssfeed
         - S3ReadPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 256
       Timeout: 30
+      Architectures:
+        - arm64
       Environment:
         Variables:
+          dynamo_region: !Ref 'AWS::Region'
+          dynamo_table: !Ref rssfeed
+          s3bucket: !Ref PublicJsonBucket
+          s3_bucket: !Ref PublicJsonBucket
+          storepublics3: !Ref StorePublicS3
+          sendemails: !Ref SendEmails
+          send_mail: !Ref SendEmails
+          from_email: !Ref SourceEmail
+          to_email: !Ref DestEmail
           algolia_app: !Ref AlgoliaApp
           algolia_apikey: !Ref AlgoliaApikey
           algolia_index: !Ref AlgoliaIndex
-          dynamo_region: !Ref 'AWS::Region'
-          dynamo_table: !Ref rssfeed
-          from_email: !Ref SourceEmail
-          to_email: !Ref DestEmail
-          s3_bucket: !Ref PublicJsonBucket
-          storepublics3: !Ref StorePublicS3
-          send_mail: !Ref SendEmails
           enable_algolia: !Ref EnableAlgolia
+          POWERTOOLS_SERVICE_NAME: rsscrawl
+          POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # refresh pagecount stored in dynamodb using a manual lambda invoke
   pagecount:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: pagecount.handler
-      Runtime: python3.8
+      Runtime: python3.12
       CodeUri: lambda-pagecount/
       Description: 'Retrieve the total article count for blogs stored in DynamoDB'
       Policies:
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
       MemorySize: 256
@@ -156,29 +166,30 @@ Resources:
           POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
-      Layers: 
-        - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # create lambda layer with dependencies
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
+    DeletionPolicy: Retain
     Properties:
       LayerName: rsslayer
       Description: python3 dependencies for XRay, BeautifulSoup4, feedparser and requests
       ContentUri: lambda-layer/
       CompatibleRuntimes:
-        - python3.8
+        - python3.12
       LicenseInfo: 'MIT-0'
       RetentionPolicy: Delete
     Metadata:
-      BuildMethod: python3.8
+      BuildMethod: python3.12
 
   # dynamodb table for blog articles
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       AttributeDefinitions:
       - AttributeName: guid
         AttributeType: S
@@ -187,6 +198,8 @@ Resources:
       - AttributeName: visible
         AttributeType: S
       - AttributeName: blogsource
+        AttributeType: S
+      - AttributeName: provider
         AttributeType: S
       KeySchema:
       - AttributeName: guid
@@ -210,6 +223,35 @@ Resources:
           KeyType: RANGE
         Projection:
           ProjectionType: ALL
+      - IndexName: feed-source-timest
+        KeySchema:
+        - AttributeName: blogsource
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [visible, link, preview, title, author]
+      - IndexName: feed-visible-timest
+        KeySchema:
+        - AttributeName: visible
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [link, blogsource, preview, title, author]
+      - IndexName: provider-timest
+        KeySchema:
+        - AttributeName: provider
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [visible, link, blogsource, preview, title, author]
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
 
   # log group
   rssblog:
@@ -222,10 +264,12 @@ Resources:
   # state machine to coordinate the workflow
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Type: STANDARD
       Tracing:
-        Enabled: true
+        Enabled: false
       DefinitionUri: statemachine/rssblog.asl.json
       DefinitionSubstitutions:
         rsscrawl: !GetAtt rsscrawl.Arn
@@ -237,10 +281,11 @@ Resources:
             FunctionName: !Ref rssgetfeed
         - CloudWatchFullAccess
       Logging:
+        Level: ERROR
         IncludeExecutionData: true
         Destinations:
           - CloudWatchLogsLogGroup:
-              LogGroupArn: !GetAtt rssblog.Arn
+              LogGroupArn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/rssblog:*'
       Events:
         ScheduledEventEvery15Min:
           Type: Schedule
@@ -382,6 +427,18 @@ Resources:
       ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-response.vtl'
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountAll
+
+  ProviderResolver:
+    Condition: EnableAppSync
+    Type: 'AWS::AppSync::Resolver'
+    DeletionPolicy: Retain
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplateS3Location: './graphql/QueryDdbByProvider-request.vtl'
+      ResponseMappingTemplateS3Location: './graphql/QueryDdbByProvider-response.vtl'
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: blogsByProvider
 
 # print the url of the state machine and graphql details
 Outputs:

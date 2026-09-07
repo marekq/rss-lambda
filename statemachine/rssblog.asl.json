@@ -6,35 +6,19 @@
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
       "OutputPath": "$.Payload",
-      "Parameters": {
-        "FunctionName": "${rsscrawl}",
-        "Payload": {
-          "msg.$": "$"
-        }
-      },
+      "Parameters": { "FunctionName": "${rsscrawl}", "Payload": { "msg.$": "$" } },
       "Next": "Get RSS Blog Feed"
     },
     "Get RSS Blog Feed": {
       "Type": "Map",
-      "InputPath": "$",
       "ItemsPath": "$.results",
       "OutputPath": "$",
-      "ResultPath": "$.map",
-      "Next": "Finish",
+      "Next": "Run all.json Refresh",
       "Parameters": {
         "msg.$": "$$.Map.Item.Value",
         "guids.$": "$.guids",
-        "s3_bucket.$": "$.s3_bucket",
-        "algolia_app.$": "$.algolia_app",
-        "algolia_apikey.$": "$.algolia_apikey",
-        "algolia_index.$": "$.algolia_index",
-        "dynamo_region.$": "$.dynamo_region",
-        "dynamo_table.$": "$.dynamo_table",
-        "from_email.$": "$.from_email",
-        "to_email.$": "$.to_email",
-        "storepublics3.$": "$.storepublics3",
-        "enable_algolia.$": "$.enable_algolia",
-        "send_mail.$": "$.send_mail"
+        "daystoretrieve.$": "$.daystoretrieve",
+        "sendemail.$": "$.sendemail"
       },
       "Iterator": {
         "StartAt": "Get RSS Blogs",
@@ -44,38 +28,24 @@
             "Resource": "arn:aws:states:::lambda:invoke",
             "InputPath": "$",
             "OutputPath": "$.Payload",
-            "Retry": [
-              {
-                "ErrorEquals": [ "States.ALL" ],
-                "IntervalSeconds": 1,
-                "BackoffRate": 2,
-                "MaxAttempts": 3
-              }
-            ],
+            "Retry": [{ "ErrorEquals": ["States.ALL"], "IntervalSeconds": 1, "BackoffRate": 2, "MaxAttempts": 3 }],
             "Parameters": {
               "FunctionName": "${rssgetfeed}",
-              "Payload": {  
-                "msg.$": "$.msg",
-                "guids.$": "$.guids",
-                "send_mail.$": "$.send_mail",
-                "s3_bucket.$": "$.s3_bucket",
-                "dynamo_table.$": "$.dynamo_table",
-                "enable_algolia.$": "$.enable_algolia",
-                "algolia_app.$": "$.algolia_app",
-                "algolia_apikey.$": "$.algolia_apikey",
-                "algolia_index.$": "$.algolia_index",
-                "storepublics3.$": "$.storepublics3"
-              }
+              "Payload": { "msg.$": "$.msg", "guids.$": "$.guids", "sendemail.$": "$.sendemail" }
             },
             "End": true
           }
         }
       }
     },
-    "Finish": {
-      "Type": "Succeed",
+    "Run all.json Refresh": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
       "InputPath": "$",
-      "OutputPath": "$"
-    }
+      "Parameters": { "FunctionName": "${rssgetfeed}", "Payload": { "msg": "all" } },
+      "Next": "Finish"
+    },
+    "Finish": { "Type": "Succeed", "InputPath": "$", "OutputPath": "$" }
   }
 }

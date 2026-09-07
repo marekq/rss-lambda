@@ -1,0 +1,5 @@
+{
+  "wiz": ["wiz", "wiz-threats"],
+  "aws": ["apn", "architecture", "big-data", "biz-prod", "cli", "compute", "contact-center", "containers", "cost-mgmt", "database", "desktop", "developer", "devops", "enterprise-strat", "gamedev", "gametech", "governance", "industries", "infrastructure", "iot", "java", "machine-learning", "management-tools", "marketplace", "media", "messaging", "ml", "mobile", "modernizing", "networking", "newsblog", "open-source", "public-sector", "quantum", "robotics", "sap", "security", "security-bulletins", "serverless", "startups", "storage", "training", "whats-new"],
+  "gcp": ["goog-security", "goog-p0", "goog-tag", "goog-safety"]
+}

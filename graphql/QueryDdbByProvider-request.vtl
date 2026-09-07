@@ -1,6 +1,3 @@
-#if(!$util.isNull($ctx.args.filter.blogsource) || !$util.isNull($ctx.args.filter.timest))
-  $util.error("Use blogsource and timest query arguments for index key conditions", "BadRequest")
-#end
 #set($filter = {"expression": "#published = :published", "expressionNames": {"#published": "visible"}, "expressionValues": {":published": {"S": "y"}}})
 #set($limit = $util.defaultIfNull($ctx.args.limit, 100))
 #if($limit < 1 || $limit > 101)
@@ -9,11 +6,11 @@
 {
   "version": "2018-05-29",
   "operation": "Query",
-  "index": "feed-source-timest",
+  "index": "provider-timest",
   "limit": $limit,
   "scanIndexForward": false,
   "select": "ALL_PROJECTED_ATTRIBUTES",
-  "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "blogsource", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.blogsource), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
+  "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "provider", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.provider), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
   "filter": $util.toJson($filter),
   "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
 }
