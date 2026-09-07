@@ -124,6 +124,7 @@ Resources:
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       LayerName: rsslayer
       Description: Python 3.12 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
