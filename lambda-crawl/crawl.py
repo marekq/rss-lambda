@@ -5,12 +5,7 @@
 import botocore, boto3
 import os, queue, threading, time
 
-from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key
-
-logger = Logger()
-tracer = Tracer(patch_modules = ["boto3"])
-
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
@@ -22,7 +17,6 @@ q1 = queue.Queue()
 
 
 # get the blogpost guids that are already stored in DynamoDB table
-@tracer.capture_method(capture_response = False)
 def get_guids(ts):
 	guids = set()
 	queryres = ddb.query(ScanIndexForward = True, IndexName = 'visible', ProjectionExpression = 'guid',
@@ -45,7 +39,6 @@ def get_guids(ts):
 
 
 # read the url's from 'feeds.txt' stored in the lambda function
-@tracer.capture_method(capture_response = False)
 def read_feed():
 	result = {}
 	with open('feeds.txt') as fp:
@@ -57,7 +50,6 @@ def read_feed():
 	return result, count
 
 # get the contents of the dynamodb table for json object on S3
-@tracer.capture_method(capture_response = False)
 def get_feed(x):
 	url, blogsource = x
 	ts_multiplier = 1 if blogsource + '.json' in s3files else 86400
@@ -67,15 +59,12 @@ def get_feed(x):
 	res.append({'ts': ts_old, 'url': url, 'blogsource': blogsource, 'daystoretrieve': days_to_retrieve})
 
 # worker for queue jobs
-@tracer.capture_method(capture_response = False)
 def worker():
 	while not q1.empty():
 		get_feed(q1.get())
 		q1.task_done()
 
 # lambda handler
-@logger.inject_lambda_context(log_event = True)
-@tracer.capture_lambda_handler
 def handler(event, context):
 	global days_to_retrieve, send_email, res, s3files
 

@@ -7,14 +7,9 @@ import botocore, boto3, feedparser
 import json, os, re, readability, requests
 import sys, time
 
-from aws_lambda_powertools import Logger, Tracer
 from boto3.dynamodb.conditions import Key
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
-
-logger = Logger()
-tracer = Tracer(patch_modules = ["boto3", "requests"])
-
 
 # establish a session with SES, DynamoDB and Comprehend
 ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], config = botocore.client.Config(max_pool_connections = 50)).Table(os.environ['dynamo_table'])
@@ -24,13 +19,11 @@ s3 = boto3.client('s3')
 
 
 # get the RSS feed through feedparser
-@tracer.capture_method(capture_response = False)
 def get_rss(url):
 	return feedparser.parse(url)
 
 
 # update the item count in dynamodb by 1
-@tracer.capture_method(capture_response = False)
 def update_itemcount(blogsource):
 	
 	# update guid: <blogsource>, timest: 0
@@ -44,7 +37,6 @@ def update_itemcount(blogsource):
 
 
 # write the blogpost record into DynamoDB
-@tracer.capture_method(capture_response = False)
 def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	if not description:
@@ -84,7 +76,6 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 
 
 # retrieve the url of a blogpost
-@tracer.capture_method(capture_response = False)
 def retrieve_url(url):
 
 	# set a "real" user agent
@@ -114,7 +105,6 @@ def retrieve_url(url):
 
 
 # analyze the text of a blogpost using the AWS Comprehend service
-@tracer.capture_method(capture_response = False)
 def comprehend(cleantxt, title):
 	detections = []
 	found = False
@@ -147,7 +137,6 @@ def comprehend(cleantxt, title):
 
 
 # send an email out whenever a new blogpost was found - this feature is optional
-@tracer.capture_method(capture_response = False)
 def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 	# create a simple html body for the email
@@ -174,7 +163,6 @@ def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 
 
 # main function to kick off collection of an rss feed
-@tracer.capture_method(capture_response = False)
 def get_feed(url, blogsource, guids):
 
 	# create a variable about blog update and list to store new blogs
@@ -224,7 +212,6 @@ def get_feed(url, blogsource, guids):
 
 
 # check if new items were uploaded to s3
-@tracer.capture_method(capture_response = False)
 def get_s3_json_age():
 	s3list = s3.list_objects_v2(Bucket = os.environ['s3bucket'])
 	print('get s3 list ' + str(s3list))
@@ -243,7 +230,6 @@ def get_s3_json_age():
 
 
 # get the contents of the dynamodb table for json object on S3
-@tracer.capture_method(capture_response = False)
 def get_table_json(blogsource):
 	s3guids = []
 	res = []
@@ -290,7 +276,6 @@ def get_table_json(blogsource):
 
 
 # copy the file to s3 with a public acl
-@tracer.capture_method(capture_response = False)
 def cp_s3(blogsource):
 
 	# put object to s3
@@ -305,7 +290,6 @@ def cp_s3(blogsource):
 
 
 # update json objects on S3 for single page web apps
-@tracer.capture_method(capture_response = False)
 def update_json_s3(blog):
 
 	print('updating json for ' + blog)
@@ -333,8 +317,6 @@ def make_json(content, blogsource):
 
 
 # lambda handler
-@logger.inject_lambda_context(log_event = True)
-@tracer.capture_lambda_handler
 def handler(event, context):
 	global days_to_retrieve, send_mail
 	days_to_retrieve = 1

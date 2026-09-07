@@ -21,14 +21,6 @@ Parameters:
       - 'y'
       - 'n'
 
-  StorePublicS3:
-    Description: Store a JSON object of blogposts as a public S3 file (default 'n').
-    Default: 'n'
-    Type: String
-    AllowedValues:
-      - 'y'
-      - 'n'
-
   CreateAppSync:
     Description: Create a read only AppSync endpoint for the blogs stored in DynamoDB
     Default: 'n'
@@ -36,29 +28,6 @@ Parameters:
     AllowedValues:
       - 'y'
       - 'n'
-
-  EnableAlgolia:
-    Description: Optional - enable Algolia search index support
-    Default: 'n'
-    Type: 'String'
-    AllowedValues:
-      - 'y'
-      - 'n'
-
-  AlgoliaApp: 
-    Description: Optional - add the Algolia App ID
-    Default: ''
-    Type: String
-
-  AlgoliaApikey:
-    Description: Optional - add the Algolia API key
-    Default: ''
-    Type: String
-
-  AlgoliaIndex: 
-    Description: Optional - add the Algolia Index name
-    Default: ''
-    Type: String
 
 # appsync create condition
 Conditions: 
@@ -97,9 +66,6 @@ Resources:
           s3bucket: !Ref PublicJsonBucket
           fromemail: !Ref SourceEmail
           toemail: !Ref DestEmail
-          storepublics3: !Ref StorePublicS3
-          POWERTOOLS_SERVICE_NAME: rssgetfeed
-          POWERTOOLS_TRACE_DISABLED: "false"
          
       Tracing: Active
       ReservedConcurrentExecutions: 50
@@ -128,18 +94,7 @@ Resources:
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
           s3bucket: !Ref PublicJsonBucket
-          s3_bucket: !Ref PublicJsonBucket
-          storepublics3: !Ref StorePublicS3
           sendemails: !Ref SendEmails
-          send_mail: !Ref SendEmails
-          from_email: !Ref SourceEmail
-          to_email: !Ref DestEmail
-          algolia_app: !Ref AlgoliaApp
-          algolia_apikey: !Ref AlgoliaApikey
-          algolia_index: !Ref AlgoliaIndex
-          enable_algolia: !Ref EnableAlgolia
-          POWERTOOLS_SERVICE_NAME: rsscrawl
-          POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
       Layers: 
@@ -162,8 +117,6 @@ Resources:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          POWERTOOLS_SERVICE_NAME: rssgetpagecount
-          POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
 
