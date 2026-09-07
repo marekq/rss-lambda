@@ -27,7 +27,7 @@ def get_rss(url):
 
 
 # write the blogpost record and counters atomically and idempotently
-def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
+def put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	if not description:
 		description = '...'
@@ -43,9 +43,7 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 		'guid' : guid,
 		'category' : category,
 		'datestr' : datestr_post,
-		'fulltxt': cleantxt,
 		'lower-tag' : tags.lower(),
-		'rawhtml': rawhtml,
 		'tag' : tags,
 		'visible' : 'y'
 	}
@@ -221,7 +219,7 @@ def get_feed(url, blogsource, guids):
 			if 'tags' in x:
 				category = ', '.join(str(tag['term']) for tag in x['tags'])
 
-			inserted = put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
+			inserted = put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post)
 			if inserted:
 				blogupdate = True
 				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
