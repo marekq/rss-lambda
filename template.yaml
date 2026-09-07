@@ -40,7 +40,7 @@ Resources:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: getfeed.handler
-      Runtime: python3.12
+      Runtime: python3.14
       CodeUri: lambda-getfeed/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
@@ -77,7 +77,7 @@ Resources:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: crawl.handler
-      Runtime: python3.12
+      Runtime: python3.14
       CodeUri: lambda-crawl/
       Description: 'Retrieve RSS feeds and check files stored on S3'
       Policies:
@@ -105,7 +105,7 @@ Resources:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: pagecount.handler
-      Runtime: python3.12
+      Runtime: python3.14
       CodeUri: lambda-pagecount/
       Description: 'Retrieve the total article count for blogs stored in DynamoDB'
       Policies:
@@ -127,14 +127,14 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       LayerName: rsslayer
-      Description: Python 3.12 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
+      Description: Python 3.14 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
       ContentUri: lambda-layer/
       CompatibleRuntimes:
-        - python3.12
+        - python3.14
       LicenseInfo: 'MIT-0'
       RetentionPolicy: Delete
     Metadata:
-      BuildMethod: python3.12
+      BuildMethod: python3.14
 
   # dynamodb table for blog articles
   rssfeed:
