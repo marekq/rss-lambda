@@ -7,7 +7,9 @@ import botocore, boto3, feedparser
 import json, os, re, readability, requests
 import sys, time
 
+from boto3.dynamodb.types import TypeSerializer
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 
@@ -16,6 +18,7 @@ ddb = boto3.resource('dynamodb', region_name = os.environ['dynamo_region'], conf
 com = boto3.client(service_name = 'comprehend', region_name = os.environ['AWS_REGION'])
 ses = boto3.client('ses')
 s3 = boto3.client('s3')
+serializer = TypeSerializer()
 
 
 # get the RSS feed through feedparser
@@ -23,20 +26,7 @@ def get_rss(url):
 	return feedparser.parse(url)
 
 
-# update the item count in dynamodb by 1
-def update_itemcount(blogsource):
-	
-	# update guid: <blogsource>, timest: 0
-	ddb.update_item(
-		Key = { "guid" : blogsource, "timest" : 0 },
-		ExpressionAttributeValues = { ":inc" : 1 },
-		UpdateExpression = "ADD articlecount :inc"
-	)
-
-	print('incremented ' + blogsource + ' count by 1')
-
-
-# write the blogpost record into DynamoDB
+# write the blogpost record and counters atomically and idempotently
 def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post):
 
 	if not description:
@@ -62,17 +52,48 @@ def put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsou
 
 	add_provider(fullitem)
 
-	# put the full record into dynamodb
-	ddb.put_item(
-		TableName = os.environ['dynamo_table'],
-		Item = fullitem
-	)
+	serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
+	counter_increment = {':inc': {'N': '1'}}
 
-	# increment dynamodb counter for blog category by 1
-	update_itemcount(blogsource)
+	try:
+		ddb.meta.client.transact_write_items(
+			TransactItems=[
+				{
+					'Put': {
+						'TableName': os.environ['dynamo_table'],
+						'Item': serialized_item,
+						'ConditionExpression': 'attribute_not_exists(#guid) AND attribute_not_exists(#timest)',
+						'ExpressionAttributeNames': {'#guid': 'guid', '#timest': 'timest'}
+					}
+				},
+				{
+					'Update': {
+						'TableName': os.environ['dynamo_table'],
+						'Key': {'guid': {'S': blogsource}, 'timest': {'N': '0'}},
+						'ExpressionAttributeValues': counter_increment,
+						'UpdateExpression': 'ADD articlecount :inc'
+					}
+				},
+				{
+					'Update': {
+						'TableName': os.environ['dynamo_table'],
+						'Key': {'guid': {'S': 'all'}, 'timest': {'N': '0'}},
+						'ExpressionAttributeValues': counter_increment,
+						'UpdateExpression': 'ADD articlecount :inc'
+					}
+				}
+			]
+		)
+		print('inserted ' + guid + ' and incremented ' + blogsource + ' and all counters')
+		return True
 
-	# increment dynamodb counter for all blogs by 1
-	update_itemcount('all')
+	except ClientError as error:
+		if error.response['Error']['Code'] == 'TransactionCanceledException':
+			reasons = error.response.get('CancellationReasons', [])
+			if reasons and reasons[0].get('Code') == 'ConditionalCheckFailed':
+				print('skipping duplicate article ' + guid)
+				return False
+		raise
 
 
 # retrieve the url of a blogpost
@@ -200,13 +221,13 @@ def get_feed(url, blogsource, guids):
 			if 'tags' in x:
 				category = ', '.join(str(tag['term']) for tag in x['tags'])
 
-			blogupdate = True
+			inserted = put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
+			if inserted:
+				blogupdate = True
+				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
 
-			put_dynamo(timest_post, title, cleantxt, rawhtml, description, link, blogsource, author, guid, tags, category, datestr_post)
-			newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
-
-			if send_mail == 'y':
-				send_email(os.environ['toemail'], title, blogsource, author, rawhtml, link, datestr_post)
+				if send_mail == 'y':
+					send_email(os.environ['toemail'], title, blogsource, author, rawhtml, link, datestr_post)
 
 	return blogupdate, newblogs
 

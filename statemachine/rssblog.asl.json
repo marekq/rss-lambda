@@ -1,37 +1,92 @@
 {
-  "Comment": "Check AWS Blog feeds, get last timestamp stored on S3",
+  "Comment": "Discover RSS feeds, process them with bounded concurrency, refresh JSON, and report partial failures",
   "StartAt": "Discover Blog Feeds",
   "States": {
     "Discover Blog Feeds": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
+      "TimeoutSeconds": 45,
       "OutputPath": "$.Payload",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
       "Parameters": { "FunctionName": "${rsscrawl}", "Payload": { "msg.$": "$" } },
       "Next": "Get RSS Blog Feed"
     },
     "Get RSS Blog Feed": {
       "Type": "Map",
       "ItemsPath": "$.results",
-      "OutputPath": "$",
+      "MaxConcurrency": 8,
       "Next": "Run all.json Refresh",
-      "Parameters": {
+      "ItemSelector": {
         "msg.$": "$$.Map.Item.Value",
         "guids.$": "$.guids",
         "daystoretrieve.$": "$.daystoretrieve",
         "sendemail.$": "$.sendemail"
       },
-      "Iterator": {
+      "ResultPath": "$.feedResults",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
         "StartAt": "Get RSS Blogs",
         "States": {
           "Get RSS Blogs": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
-            "InputPath": "$",
-            "OutputPath": "$.Payload",
-            "Retry": [{ "ErrorEquals": ["States.ALL"], "IntervalSeconds": 1, "BackoffRate": 2, "MaxAttempts": 3 }],
+            "TimeoutSeconds": 330,
+            "ResultPath": "$.result",
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "States.Timeout"
+                ],
+                "IntervalSeconds": 2,
+                "BackoffRate": 2,
+                "MaxAttempts": 3
+              }
+            ],
             "Parameters": {
               "FunctionName": "${rssgetfeed}",
               "Payload": { "msg.$": "$.msg", "guids.$": "$.guids", "sendemail.$": "$.sendemail" }
+            },
+            "Next": "Feed Succeeded",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.error",
+                "Next": "Feed Failed"
+              }
+            ]
+          },
+          "Feed Succeeded": {
+            "Type": "Pass",
+            "Parameters": {
+              "status": "succeeded",
+              "blogsource.$": "$.msg.blogsource",
+              "items.$": "$.result.Payload"
+            },
+            "End": true
+          },
+          "Feed Failed": {
+            "Type": "Pass",
+            "Parameters": {
+              "status": "failed",
+              "blogsource.$": "$.msg.blogsource",
+              "error.$": "$.error"
             },
             "End": true
           }
@@ -41,11 +96,42 @@
     "Run all.json Refresh": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke",
-      "OutputPath": "$.Payload",
-      "InputPath": "$",
+      "TimeoutSeconds": 330,
+      "ResultPath": "$.allRefresh",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
       "Parameters": { "FunctionName": "${rssgetfeed}", "Payload": { "msg": "all" } },
-      "Next": "Finish"
+      "Next": "Any Feed Failed"
     },
-    "Finish": { "Type": "Succeed", "InputPath": "$", "OutputPath": "$" }
+    "Any Feed Failed": {
+      "Type": "Choice",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $count($states.input.feedResults[status = 'failed']) > 0 %}",
+          "Next": "Feed Failure"
+        }
+      ],
+      "Default": "Finish"
+    },
+    "Feed Failure": {
+      "Type": "Fail",
+      "Error": "FeedItemsFailed",
+      "Cause": "One or more RSS feeds failed after retries; all.json was refreshed for the feeds that completed."
+    },
+    "Finish": {
+      "Type": "Succeed"
+    }
   }
 }

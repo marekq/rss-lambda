@@ -53,6 +53,12 @@ Resources:
         - ComprehendFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'dynamodb:TransactWriteItems'
+              Resource: !GetAtt rssfeed.Arn
         - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 512
@@ -71,6 +77,30 @@ Resources:
       ReservedConcurrentExecutions: 50
       Layers: 
         - !Ref lambdalayer
+
+  # send a concise SES alert when the workflow execution fails
+  statefailurealert:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: alert.handler
+      Runtime: python3.14
+      CodeUri: lambda-alert/
+      Description: 'Send an SES alert when the RSS state machine execution fails'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'ses:SendEmail'
+              Resource: '*'
+      MemorySize: 128
+      Timeout: 10
+      Architectures:
+        - arm64
+      Environment:
+        Variables:
+          fromemail: !Ref SourceEmail
+          toemail: !Ref DestEmail
 
   # create rss feed crawl function
   rsscrawl:
@@ -131,10 +161,13 @@ Resources:
       ContentUri: lambda-layer/
       CompatibleRuntimes:
         - python3.14
+      CompatibleArchitectures:
+        - arm64
       LicenseInfo: 'MIT-0'
       RetentionPolicy: Delete
     Metadata:
       BuildMethod: python3.14
+      BuildArchitecture: arm64
 
   # dynamodb table for blog articles
   rssfeed:
@@ -241,10 +274,54 @@ Resources:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/rssblog:*'
       Events:
-        ScheduledEventEvery15Min:
-          Type: Schedule
+        ScheduledEventWeekdays:
+          Type: ScheduleV2
           Properties:
-            Schedule: rate(15 minutes)
+            Description: 'Run the RSS workflow every three hours on weekdays during the day'
+            Name: !Sub '${AWS::StackName}-rss-weekday-schedule'
+            ScheduleExpression: 'cron(0 9,12,15,18,21 ? * MON-FRI *)'
+            ScheduleExpressionTimezone: Europe/Amsterdam
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+        ScheduledEventWeekends:
+          Type: ScheduleV2
+          Properties:
+            Description: 'Run the RSS workflow once at 09:00 on weekends'
+            Name: !Sub '${AWS::StackName}-rss-weekend-schedule'
+            ScheduleExpression: 'cron(0 9 ? * SAT,SUN *)'
+            ScheduleExpressionTimezone: Europe/Amsterdam
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+
+  # alert only failed, timed-out, or aborted executions of this state machine
+  statefailurealertrule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Send an SES alert for failed RSS workflow executions'
+      EventPattern:
+        source:
+          - aws.states
+        detail-type:
+          - Step Functions Execution Status Change
+        detail:
+          stateMachineArn:
+            - !Ref blogstatemachine
+          status:
+            - FAILED
+            - TIMED_OUT
+            - ABORTED
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt statefailurealert.Arn
+          Id: StateMachineFailureAlert
+
+  statefailurealertpermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt statefailurealert.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt statefailurealertrule.Arn
 
   # graphql api role
   GraphQLApiRole:

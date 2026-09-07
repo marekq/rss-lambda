@@ -1,11 +1,13 @@
 rss-lambda
 ==========
 
-Monitor blogs through RSS and store new posts in DynamoDB. The workflow can also send notifications through Amazon SES, refresh JSON feeds in S3, and expose the stored posts through an optional AppSync API. A Standard Step Functions workflow runs every 15 minutes by default.
+Monitor blogs through RSS and store new posts in DynamoDB. The workflow can also send notifications through Amazon SES, refresh JSON feeds in S3, and expose the stored posts through an optional AppSync API. A Standard Step Functions workflow runs at 09:00, 12:00, 15:00, 18:00, and 21:00 Netherlands time on weekdays, and at 09:00 on weekends. Failed, timed-out, and aborted executions send a concise SES alert.
 
 The default feed list includes AWS, Google, and Wiz security feeds. Add or remove feeds in `lambda-crawl/feeds.txt`; each line contains a source name and RSS URL separated by a comma.
 
 The feed retrieval Lambda uses `readability-lxml` to extract article content. It stores the title, description, metadata, cleaned text, and source HTML in DynamoDB. When a new article is found, the workflow also refreshes the source JSON file and the combined `all.json` file in the S3 bucket.
+
+The workflow processes feeds with bounded concurrency and retries only transient Lambda service failures. A failed individual feed is recorded while successful feeds still refresh the JSON output; the overall execution then fails so the SES alert is sent. Article writes and both article counters use one conditional DynamoDB transaction, making retries safe from duplicate records and counts.
 
 
 Installation
