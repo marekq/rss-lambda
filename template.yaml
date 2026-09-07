@@ -126,7 +126,7 @@ Resources:
     DeletionPolicy: Retain
     Properties:
       LayerName: rsslayer
-      Description: python3 dependencies for XRay, BeautifulSoup4, feedparser and requests
+      Description: Python 3.12 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
       ContentUri: lambda-layer/
       CompatibleRuntimes:
         - python3.12
