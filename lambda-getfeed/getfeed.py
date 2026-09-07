@@ -20,6 +20,17 @@ ses = boto3.client('ses')
 s3 = boto3.client('s3')
 serializer = TypeSerializer()
 
+# These attributes are the table's primary and secondary-index keys. Keep the
+# expected wire types next to the serialization boundary so a feed payload can
+# never accidentally turn a key into a DynamoDB map/list/etc.
+DYNAMODB_KEY_TYPES = {
+	'guid': 'S',
+	'timest': 'N',
+	'blogsource': 'S',
+	'visible': 'S',
+	'provider': 'S',
+}
+
 
 # get the RSS feed through feedparser
 def get_rss(url):
@@ -28,6 +39,15 @@ def get_rss(url):
 
 # write the blogpost record atomically and idempotently
 def put_dynamo(timest_post, title, description, link, blogsource, author, guid, tags, category, datestr_post):
+	# Feedparser fields are not guaranteed to be plain scalars. Normalize every
+	# value used by a DynamoDB key before constructing the item.
+	guid = str(guid)
+	blogsource = str(blogsource)
+	timest_post = int(timest_post)
+	if not guid:
+		raise ValueError('article guid must not be empty')
+	if not blogsource:
+		raise ValueError('article blogsource must not be empty')
 
 	if not description:
 		description = '...'
@@ -57,6 +77,24 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 		fullitem.pop('tag', None)
 
 	serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
+
+	# Set the two table-key values explicitly as AttributeValue objects. This is
+	# intentionally redundant with TypeSerializer: it makes the contract clear
+	# and prevents a future change to input normalization from sending M/L/etc.
+	serialized_item['guid'] = {'S': guid}
+	serialized_item['timest'] = {'N': str(timest_post)}
+
+	key_type_errors = []
+	for key, expected_type in DYNAMODB_KEY_TYPES.items():
+		if key not in serialized_item:
+			continue
+		actual = serialized_item[key]
+		if set(actual) != {expected_type}:
+			key_type_errors.append(
+				f'{key}: expected {expected_type}, got {json.dumps(actual, sort_keys=True)}'
+			)
+	if key_type_errors:
+		raise ValueError('invalid DynamoDB key types: ' + '; '.join(key_type_errors))
 
 	try:
 		ddb.meta.client.transact_write_items(
