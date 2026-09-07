@@ -51,7 +51,58 @@ The deployment file has three functional sections:
 
 After setup, Git sync monitors the selected branch and the template plus deployment file. A committed change to either file is detected by CloudFormation and can be reviewed through the stack's **Git sync** tab before being applied. Keep secrets out of the deployment file; use a secret-management service or a protected parameter strategy for sensitive values. If an existing Git sync configuration still points to the old root-level file, update its deployment-file path to `deploy/gitsync-deployment.yaml` in the CloudFormation console.
 
-Git sync is an alternative to the local `make init` and `make deploy` SAM workflow. Use one deployment path consistently for a given stack to avoid competing updates.
+Git sync is an alternative to the local `make init` and `make deploy` SAM workflow. It does not run `sam build` or package local `CodeUri`, `ContentUri`, and `DefinitionUri` paths. Use it only with a pre-packaged template whose artifacts already exist in S3. Do not run Git sync and the CodePipeline below against the same application stack; they are competing deployment controllers.
+
+
+CodePipeline deployment
+-----------------------
+
+For automated deployment of this repository's local SAM source, use the pipeline definition in `pipeline/codepipeline.yaml` and the build commands in `pipeline/buildspec.yml`. The pipeline is a separate stack from `rssgraph2`:
+
+`GitHub push/merge → CodeConnections → CodePipeline → CodeBuild → sam build → sam deploy → CloudFormation`
+
+The pipeline stack creates a private, encrypted, versioned S3 artifact bucket, a CodePipeline source action, and a CodeBuild project using the AWS SAM Python 3.14 build image. The SAM source paths remain portable in `template.yaml`; CodeBuild packages them into that account's private bucket. No public artifact URLs are required.
+
+### One-time setup
+
+1. Disable or remove the CloudFormation Git sync configuration for `rssgraph2`. Git sync must not continue to own the same stack once CodePipeline is deployed.
+2. Create and authorize a GitHub connection in AWS CodeConnections. The connection must be `AVAILABLE` and have access to `marekq/rss-lambda`. Copy its connection ARN. Creating the connection requires a one-time GitHub authorization in the AWS console.
+3. Create or select a CloudFormation execution role for the application stack. It must trust `cloudformation.amazonaws.com` and have permissions for every resource type in `template.yaml`, including Lambda, IAM, S3, DynamoDB, CloudWatch Logs, Step Functions, EventBridge Scheduler, EventBridge rules, AppSync, and tagging operations. The role ARN is passed to CodeBuild and is not stored in the repository.
+4. Deploy the pipeline stack. Replace the connection and execution role ARNs with values from your account:
+
+```bash
+aws cloudformation deploy \
+  --region eu-west-1 \
+  --template-file pipeline/codepipeline.yaml \
+  --stack-name rssgraph2-pipeline \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    ConnectionArn=arn:aws:codeconnections:eu-west-1:123456789012:connection/example \
+    FullRepositoryId=marekq/rss-lambda \
+    BranchName=master \
+    ApplicationStackName=rssgraph2 \
+    CloudFormationExecutionRoleArn=arn:aws:iam::123456789012:role/RssGraphCloudFormation \
+    SourceEmail=aws@example.com \
+    DestEmail=operator@example.com \
+    SendEmails=y \
+    CreateAppSync=y
+```
+
+The pipeline source action is configured with `DetectChanges: true`, so a commit to `master` starts CodePipeline automatically. To run it manually after bootstrap:
+
+```bash
+PIPELINE_NAME=$(aws cloudformation describe-stacks \
+  --region eu-west-1 \
+  --stack-name rssgraph2-pipeline \
+  --query 'Stacks[0].Outputs[?OutputKey==`PipelineName`].OutputValue' \
+  --output text)
+
+aws codepipeline start-pipeline-execution \
+  --region eu-west-1 \
+  --name "$PIPELINE_NAME"
+```
+
+The first deployment should be monitored in CodePipeline and CloudFormation. Keep the stack execution role stable; changing it outside the pipeline can cause CloudFormation rollback or tagging failures. For this repository, use either this CodePipeline workflow or direct `make deploy` for `rssgraph2`, not both.
 
 
 Repository contents
@@ -59,6 +110,8 @@ Repository contents
 
 - `template.yaml` is the SAM/CloudFormation deployment source.
 - `deploy/gitsync-deployment.yaml` contains the production parameters and tags used by CloudFormation Git sync. Configure this full repository path when connecting the stack; choose the AWS Region in the Git sync stack configuration rather than in this file.
+- `pipeline/codepipeline.yaml` defines the separate CodePipeline/CodeBuild bootstrap stack.
+- `pipeline/buildspec.yml` packages and deploys the SAM application from CodeBuild.
 - `lambda-crawl/` contains the function that discovers feeds and determines the retrieval window.
 - `lambda-getfeed/` contains the function that retrieves and stores individual feed entries.
 - `lambda-pagecount/` contains the manually invoked counter-refresh function.

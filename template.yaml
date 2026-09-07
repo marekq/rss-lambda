@@ -41,7 +41,7 @@ Resources:
     Properties:
       Handler: getfeed.handler
       Runtime: python3.14
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/9cfda06849f4b78b8d1486a9e16836db
+      CodeUri: lambda-getfeed/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
         - Version: '2012-10-17'
@@ -84,7 +84,7 @@ Resources:
     Properties:
       Handler: alert.handler
       Runtime: python3.14
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/d54d8decee9e4702d910561b08940b92
+      CodeUri: lambda-alert/
       Description: 'Send an SES alert when the RSS state machine execution fails'
       Policies:
         - Version: '2012-10-17'
@@ -108,7 +108,7 @@ Resources:
     Properties:
       Handler: crawl.handler
       Runtime: python3.14
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/abe37950b4320832a74f211346efeb9c
+      CodeUri: lambda-crawl/
       Description: 'Retrieve RSS feeds and check files stored on S3'
       Policies:
         - DynamoDBReadPolicy:
@@ -136,7 +136,7 @@ Resources:
     Properties:
       Handler: pagecount.handler
       Runtime: python3.14
-      CodeUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/44b15f7ef503d2c7a0fea09903216e8e
+      CodeUri: lambda-pagecount/
       Description: 'Retrieve the total article count for blogs stored in DynamoDB'
       Policies:
         - DynamoDBCrudPolicy:
@@ -158,7 +158,7 @@ Resources:
     Properties:
       LayerName: rsslayer
       Description: Python 3.14 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
-      ContentUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/0d4c3e43d22328298399a16bbd455430
+      ContentUri: lambda-layer/
       CompatibleRuntimes:
         - python3.14
       CompatibleArchitectures:
@@ -257,7 +257,7 @@ Resources:
       Type: STANDARD
       Tracing:
         Enabled: false
-      DefinitionUri: s3://aws-sam-cli-managed-default-samclisourcebucket-15fuisfyzox3u/6f195a922f45232c4d96e3ee856de6d3
+      DefinitionUri: statemachine/rssblog.asl.json
       DefinitionSubstitutions:
         rsscrawl: !GetAtt rsscrawl.Arn
         rssgetfeed: !GetAtt rssgetfeed.Arn

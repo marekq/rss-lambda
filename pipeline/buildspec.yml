@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - sam --version
+      - aws --version
+  pre_build:
+    commands:
+      - sam validate --template-file template.yaml --lint
+  build:
+    commands:
+      - sam build --parallel --cached
+      - >-
+        sam deploy
+        --template-file .aws-sam/build/template.yaml
+        --stack-name "$STACK_NAME"
+        --region "$AWS_DEFAULT_REGION"
+        --s3-bucket "$ARTIFACT_BUCKET"
+        --role-arn "$CFN_EXECUTION_ROLE_ARN"
+        --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
+        --parameter-overrides
+        SourceEmail="$SOURCE_EMAIL"
+        DestEmail="$DEST_EMAIL"
+        SendEmails="$SEND_EMAILS"
+        CreateAppSync="$CREATE_APPSYNC"
+        --no-confirm-changeset
+        --no-fail-on-empty-changeset
+        --no-progressbar
