@@ -69,8 +69,7 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 						'ExpressionAttributeNames': {'#guid': 'guid', '#timest': 'timest'}
 					}
 				}
-			],
-			ReturnCancellationReasons = True
+			]
 		)
 		print('inserted ' + guid)
 		return True
