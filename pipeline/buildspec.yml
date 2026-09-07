@@ -20,7 +20,7 @@ phases:
         --role-arn "$CFN_EXECUTION_ROLE_ARN"
         --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND
         --parameter-overrides
-        SourceEmail="$SOURCE_EMAIL"
+        SourceEmail=marek+aws@coldstart.dev
         DestEmail="$DEST_EMAIL"
         SendEmails="$SEND_EMAILS"
         CreateAppSync="$CREATE_APPSYNC"

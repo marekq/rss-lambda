@@ -6,7 +6,7 @@ Parameters:
   SourceEmail:
     Type: String
     Description: The sending email address for notification emails.
-    Default: aws@marek.rocks
+    Default: marek+aws@coldstart.dev
 
   DestEmail:
     Type: String

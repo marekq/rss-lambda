@@ -1,4 +1,4 @@
-from provider_feed import add_provider
+from provider_feed import add_provider, preview_text
 #!/usr/bin/python
 # @marekq
 # www.marek.rocks
@@ -332,11 +332,14 @@ def comprehend(cleantxt, title):
 
 
 # send an email out whenever a new blogpost was found - this feature is optional
-def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
-
-	# create a simple html body for the email
-	mailmsg = '<html><body><br><i>Posted by '+str(author)+' in ' +str(blogsource) + ' blog on ' + str(datestr_post) + '</i><br><br>'
-	mailmsg += '<a href="' + link + '">view post here</a><br><br>' + str(rawhtml) + '<br></body></html>'
+def send_email(recpt, title, blogsource, author, description, link, datestr_post):
+	# RSS preview only: extracted page HTML can contain megabytes of embedded
+	# assets. Bound every component and send UTF-8 text, never page markup.
+	mailmsg = (
+		str(title)[:300] + '\n\nPosted by ' + str(author)[:200]
+		+ ' in ' + str(blogsource)[:100] + ' on ' + str(datestr_post)[:100]
+		+ '\n\n' + preview_text(description) + '\n\nRead article: ' + str(link)[:4096]
+	)
 
 	# send the email using SES
 	r = ses.send_email(
@@ -344,11 +347,13 @@ def send_email(recpt, title, blogsource, author, rawhtml, link, datestr_post):
 		Destination = {'ToAddresses': [recpt]},
 		Message = {
 			'Subject': {
-				'Data': blogsource.upper() + ' - ' + title
+				'Data': (blogsource.upper() + ' - ' + title)[:150],
+				'Charset': 'UTF-8'
 			},
 			'Body': {
-				'Html': {
-					'Data': mailmsg
+				'Text': {
+					'Data': mailmsg,
+					'Charset': 'UTF-8'
 				}
 			}
 		}
@@ -386,7 +391,6 @@ def get_feed(url, blogsource, guids):
 			author = str(x.get('author', 'blank'))
 			
 			print('retrieving '+str(title)+' in '+str(blogsource)+' using url '+str(link)+'\n')
-			rawhtml, cleantxt = retrieve_url(link)
 			tags = ''
 
 			description = re.sub(r'<[^>]+>', '', str(x['description'])).strip('&nbsp;').replace('"', "'").strip('\n')
@@ -401,7 +405,12 @@ def get_feed(url, blogsource, guids):
 				newblogs.append(str(blogsource) + ' ' + str(title) + ' ' + str(guid))
 
 				if send_mail == 'y':
-					send_email(os.environ['toemail'], title, blogsource, author, rawhtml, link, datestr_post)
+					try:
+						send_email(os.environ['toemail'], title, blogsource, author, description, link, datestr_post)
+					except ClientError as error:
+						print(json.dumps({'event': 'email_delivery_failed', 'blogsource': blogsource,
+							'guid': _guid_label(guid), 'error_code': error.response['Error'].get('Code'),
+							'aws_request_id': error.response.get('ResponseMetadata', {}).get('RequestId')}))
 
 	# Counters are derived data. Refreshing them after the feed finishes avoids
 	# allowing a malformed legacy counter to abort an otherwise valid article write.

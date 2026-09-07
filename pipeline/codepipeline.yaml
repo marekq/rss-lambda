@@ -20,7 +20,7 @@ Parameters:
     Description: Role CloudFormation assumes to provision the application stack.
   SourceEmail:
     Type: String
-    Default: aws@marek.rocks
+    Default: marek+aws@coldstart.dev
   DestEmail:
     Type: String
     Default: marek.kuczynski@gmail.com
