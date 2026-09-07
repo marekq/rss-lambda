@@ -49,6 +49,12 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	}
 
 	add_provider(fullitem)
+	# Persist only the bounded preview. The frontend retrieves the full article
+	# from the live URL, and an RSS description can otherwise exceed 400 KB.
+	fullitem['description'] = fullitem['preview']
+	if not tags:
+		fullitem.pop('lower-tag', None)
+		fullitem.pop('tag', None)
 
 	serialized_item = {key: serializer.serialize(value) for key, value in fullitem.items()}
 
@@ -63,7 +69,8 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 						'ExpressionAttributeNames': {'#guid': 'guid', '#timest': 'timest'}
 					}
 				}
-			]
+			],
+			ReturnCancellationReasons = True
 		)
 		print('inserted ' + guid)
 		return True
@@ -71,6 +78,7 @@ def put_dynamo(timest_post, title, description, link, blogsource, author, guid, 
 	except ClientError as error:
 		if error.response['Error']['Code'] == 'TransactionCanceledException':
 			reasons = error.response.get('CancellationReasons', [])
+			print('transaction cancellation reasons for ' + guid + ': ' + json.dumps(reasons))
 			if reasons and reasons[0].get('Code') == 'ConditionalCheckFailed':
 				print('skipping duplicate article ' + guid)
 				return False
