@@ -21,14 +21,6 @@ Parameters:
       - 'y'
       - 'n'
 
-  StorePublicS3:
-    Description: Store a JSON object of blogposts as a public S3 file (default 'n').
-    Default: 'n'
-    Type: String
-    AllowedValues:
-      - 'y'
-      - 'n'
-
   CreateAppSync:
     Description: Create a read only AppSync endpoint for the blogs stored in DynamoDB
     Default: 'n'
@@ -36,29 +28,6 @@ Parameters:
     AllowedValues:
       - 'y'
       - 'n'
-
-  EnableAlgolia:
-    Description: Optional - enable Algolia search index support
-    Default: 'n'
-    Type: 'String'
-    AllowedValues:
-      - 'y'
-      - 'n'
-
-  AlgoliaApp: 
-    Description: Optional - add the Algolia App ID
-    Default: ''
-    Type: String
-
-  AlgoliaApikey:
-    Description: Optional - add the Algolia API key
-    Default: ''
-    Type: String
-
-  AlgoliaIndex: 
-    Description: Optional - add the Algolia Index name
-    Default: ''
-    Type: String
 
 # appsync create condition
 Conditions: 
@@ -71,7 +40,7 @@ Resources:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: getfeed.handler
-      Runtime: python3.8
+      Runtime: python3.14
       CodeUri: lambda-getfeed/
       Description: 'Retrieve RSS feeds and store them in DynamoDB'
       Policies:
@@ -82,68 +51,94 @@ Resources:
                 - 'ses:SendEmail'
               Resource: '*'
         - ComprehendFullAccess
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'dynamodb:TransactWriteItems'
+              Resource: !GetAtt rssfeed.Arn
         - S3CrudPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 512
-      Timeout: 30
+      Timeout: 300
+      Architectures:
+        - arm64
       Environment:
         Variables:
           dynamo_table: !Ref rssfeed
+          dynamo_region: !Ref 'AWS::Region'
+          s3bucket: !Ref PublicJsonBucket
+          fromemail: !Ref SourceEmail
+          toemail: !Ref DestEmail
          
       Tracing: Active
       ReservedConcurrentExecutions: 50
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
+
+  # send a concise SES alert when the workflow execution fails
+  statefailurealert:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: alert.handler
+      Runtime: python3.14
+      CodeUri: lambda-alert/
+      Description: 'Send an SES alert when the RSS state machine execution fails'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'ses:SendEmail'
+              Resource: '*'
+      MemorySize: 128
+      Timeout: 10
+      Architectures:
+        - arm64
+      Environment:
+        Variables:
+          fromemail: !Ref SourceEmail
+          toemail: !Ref DestEmail
 
   # create rss feed crawl function
   rsscrawl:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: crawl.handler
-      Runtime: python3.8
+      Runtime: python3.14
       CodeUri: lambda-crawl/
       Description: 'Retrieve RSS feeds and check files stored on S3'
       Policies:
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBReadPolicy:
             TableName: !Ref rssfeed
         - S3ReadPolicy:
             BucketName: !Ref PublicJsonBucket
       MemorySize: 256
       Timeout: 30
+      Architectures:
+        - arm64
       Environment:
         Variables:
-          algolia_app: !Ref AlgoliaApp
-          algolia_apikey: !Ref AlgoliaApikey
-          algolia_index: !Ref AlgoliaIndex
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          from_email: !Ref SourceEmail
-          to_email: !Ref DestEmail
-          s3_bucket: !Ref PublicJsonBucket
-          storepublics3: !Ref StorePublicS3
-          send_mail: !Ref SendEmails
-          enable_algolia: !Ref EnableAlgolia
+          s3bucket: !Ref PublicJsonBucket
+          sendemails: !Ref SendEmails
       Tracing: Active
       ReservedConcurrentExecutions: 1
       Layers: 
         - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # refresh pagecount stored in dynamodb using a manual lambda invoke
   pagecount:
     Type: 'AWS::Serverless::Function'
     Properties:
       Handler: pagecount.handler
-      Runtime: python3.8
+      Runtime: python3.14
       CodeUri: lambda-pagecount/
       Description: 'Retrieve the total article count for blogs stored in DynamoDB'
       Policies:
-        - arn:aws:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref rssfeed
       MemorySize: 256
@@ -152,33 +147,36 @@ Resources:
         Variables:
           dynamo_region: !Ref 'AWS::Region'
           dynamo_table: !Ref rssfeed
-          POWERTOOLS_SERVICE_NAME: rssgetpagecount
-          POWERTOOLS_TRACE_DISABLED: "false"
       Tracing: Active
       ReservedConcurrentExecutions: 1
-      Layers: 
-        - !Ref lambdalayer
-        - !Sub "arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:14"
 
   # create lambda layer with dependencies
   lambdalayer:
     Type: AWS::Serverless::LayerVersion
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       LayerName: rsslayer
-      Description: python3 dependencies for XRay, BeautifulSoup4, feedparser and requests
+      Description: Python 3.14 dependencies for BeautifulSoup4, readability-lxml, feedparser, and requests
       ContentUri: lambda-layer/
       CompatibleRuntimes:
-        - python3.8
+        - python3.14
+      CompatibleArchitectures:
+        - arm64
       LicenseInfo: 'MIT-0'
       RetentionPolicy: Delete
     Metadata:
-      BuildMethod: python3.8
+      BuildMethod: python3.14
+      BuildArchitecture: arm64
 
   # dynamodb table for blog articles
   rssfeed:
     Type: 'AWS::DynamoDB::Table'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       AttributeDefinitions:
       - AttributeName: guid
         AttributeType: S
@@ -187,6 +185,8 @@ Resources:
       - AttributeName: visible
         AttributeType: S
       - AttributeName: blogsource
+        AttributeType: S
+      - AttributeName: provider
         AttributeType: S
       KeySchema:
       - AttributeName: guid
@@ -210,6 +210,35 @@ Resources:
           KeyType: RANGE
         Projection:
           ProjectionType: ALL
+      - IndexName: feed-source-timest
+        KeySchema:
+        - AttributeName: blogsource
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [visible, link, preview, title, author]
+      - IndexName: feed-visible-timest
+        KeySchema:
+        - AttributeName: visible
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [link, blogsource, preview, title, author]
+      - IndexName: provider-timest
+        KeySchema:
+        - AttributeName: provider
+          KeyType: HASH
+        - AttributeName: timest
+          KeyType: RANGE
+        Projection:
+          ProjectionType: INCLUDE
+          NonKeyAttributes: [visible, link, blogsource, preview, title, author]
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
 
   # log group
   rssblog:
@@ -222,10 +251,12 @@ Resources:
   # state machine to coordinate the workflow
   blogstatemachine:
     Type: AWS::Serverless::StateMachine
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Type: STANDARD
       Tracing:
-        Enabled: true
+        Enabled: false
       DefinitionUri: statemachine/rssblog.asl.json
       DefinitionSubstitutions:
         rsscrawl: !GetAtt rsscrawl.Arn
@@ -237,15 +268,60 @@ Resources:
             FunctionName: !Ref rssgetfeed
         - CloudWatchFullAccess
       Logging:
+        Level: ERROR
         IncludeExecutionData: true
         Destinations:
           - CloudWatchLogsLogGroup:
-              LogGroupArn: !GetAtt rssblog.Arn
+              LogGroupArn: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/states/rssblog:*'
       Events:
-        ScheduledEventEvery15Min:
-          Type: Schedule
+        ScheduledEventWeekdays:
+          Type: ScheduleV2
           Properties:
-            Schedule: rate(15 minutes)
+            Description: 'Run the RSS workflow every three hours on weekdays during the day'
+            Name: !Sub '${AWS::StackName}-rss-weekday-schedule'
+            ScheduleExpression: 'cron(0 9,12,15,18,21 ? * MON-FRI *)'
+            ScheduleExpressionTimezone: Europe/Amsterdam
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+        ScheduledEventWeekends:
+          Type: ScheduleV2
+          Properties:
+            Description: 'Run the RSS workflow once at 09:00 on weekends'
+            Name: !Sub '${AWS::StackName}-rss-weekend-schedule'
+            ScheduleExpression: 'cron(0 9 ? * SAT,SUN *)'
+            ScheduleExpressionTimezone: Europe/Amsterdam
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+
+  # alert only failed, timed-out, or aborted executions of this state machine
+  statefailurealertrule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: 'Send an SES alert for failed RSS workflow executions'
+      EventPattern:
+        source:
+          - aws.states
+        detail-type:
+          - Step Functions Execution Status Change
+        detail:
+          stateMachineArn:
+            - !Ref blogstatemachine
+          status:
+            - FAILED
+            - TIMED_OUT
+            - ABORTED
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt statefailurealert.Arn
+          Id: StateMachineFailureAlert
+
+  statefailurealertpermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt statefailurealert.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt statefailurealertrule.Arn
 
   # graphql api role
   GraphQLApiRole:
@@ -300,7 +376,28 @@ Resources:
     Condition: EnableAppSync 
     Type: 'AWS::AppSync::GraphQLSchema'
     Properties:
-      DefinitionS3Location: './graphql/schema.graphql'
+      Definition: |
+        schema { query: Query }
+
+        type Query {
+          QueryDdbByBlogsourceAndTimest(blogsource: String!, filter: TableddbsourceFilterInput, limit: Int, nextToken: String, timest: Int!): listourceConnection
+          QueryDdbByVisibleAndTimest(blogsource: String!, filter: TableddbsourceFilterInput, limit: Int, nextToken: String, timest: Int!, visible: String!): listourceConnection
+          QueryDdbGetDetailText(guid: String!, timest: Int): itemsourceConnection
+          QueryDdbItemCountPerBlog(blogsource: String!): pagecountConnection
+          QueryDdbItemCountAll(timest: Int!): pagecountConnection
+          blogsByProvider(limit: Int, nextToken: String, provider: BlogProvider!, timest: Int!): listourceConnection
+        }
+
+        type itemsource { author: String blogsource: String description: String guid: String link: String rawhtml: String @deprecated(reason : "Stored HTML is no longer returned. Use description for a plain-text preview.") timest: Int }
+        type itemsourceConnection { items: [itemsource] }
+        type listsource { author: String blogsource: String description: String guid: String link: String timest: Int title: String }
+        type listourceConnection { items: [listsource] nextToken: String }
+        type pagecount { articlecount: Int blogsource: String timest: Int visible: String }
+        type pagecountConnection { items: [pagecount] }
+        enum BlogProvider { aws gcp wiz }
+        input TableIntFilterInput { between: [Int] contains: Int eq: Int ge: Int gt: Int le: Int lt: Int ne: Int notContains: Int }
+        input TableStringFilterInput { beginsWith: String between: [String] contains: String eq: String ge: String gt: String le: String lt: String ne: String notContains: String }
+        input TableddbsourceFilterInput { blogsource: TableStringFilterInput guid: TableStringFilterInput timest: TableIntFilterInput visible: TableStringFilterInput }
       ApiId: !GetAtt 'GraphQLApi.ApiId'
 
   # define dynamodb source
@@ -330,8 +427,28 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbByBlogsourceAndTimest-response.vtl'
+      RequestMappingTemplate: |
+        #if(!$util.isNull($ctx.args.filter.blogsource) || !$util.isNull($ctx.args.filter.timest))
+          $util.error("Use blogsource and timest query arguments for index key conditions", "BadRequest")
+        #end
+        #set($filter = {"expression": "#published = :published", "expressionNames": {"#published": "visible"}, "expressionValues": {":published": {"S": "y"}}})
+        #set($limit = $util.defaultIfNull($ctx.args.limit, 100))
+        #if($limit < 1 || $limit > 101)
+          $util.error("limit must be between 1 and 101", "BadRequest")
+        #end
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "index": "feed-source-timest",
+          "limit": $limit,
+          "scanIndexForward": false,
+          "select": "ALL_PROJECTED_ATTRIBUTES",
+          "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "blogsource", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.blogsource), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
+          "filter": $util.toJson($filter),
+          "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbByBlogsourceAndTimest
 
@@ -342,8 +459,25 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbByVisibleAndTimest-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "visible",
+          "limit" : 25,
+          "scanIndexForward" : false,
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "visible = :visible and timest > :timest",
+            "expressionValues" : {
+              ":visible" : { "S" : "$context.arguments.visible" },
+              ":timest" : { "N": $context.arguments.timest }
+            }
+          },
+          "nextToken": #if( $context.args.nextToken ) "$context.args.nextToken" #else null #end
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbByVisibleAndTimest
 
@@ -354,8 +488,19 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbGetDetailText-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "query" : {
+            "expression" : "guid = :guid",
+            "expressionValues" : {
+              ":guid" : {"S": "$context.arguments.guid"}
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbGetDetailText
 
@@ -366,8 +511,22 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountPerBlog-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "timest",
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "blogsource = :bs and timest = :ts",
+            "expressionValues" : {
+              ":bs" : { "S" : "$context.arguments.blogsource" },
+              ":ts" : { "N" : 0 }
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountPerBlog
 
@@ -378,10 +537,60 @@ Resources:
     Properties:
       TypeName: Query
       DataSourceName: !GetAtt 'DDBDataSource.Name'
-      RequestMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-request.vtl'
-      ResponseMappingTemplateS3Location: './graphql/QueryDdbItemCountAll-response.vtl'
+      RequestMappingTemplate: |
+        {
+          "version" : "2017-02-28",
+          "operation" : "Query",
+          "index" : "visible",
+          "select" : "ALL_PROJECTED_ATTRIBUTES",
+          "query" : {
+            "expression" : "visible = :visible and timest = :ts",
+            "expressionValues" : {
+              ":visible" : { "S" : "y" },
+              ":ts" : { "N" : 0 }
+            }
+          }
+        }
+      ResponseMappingTemplate: |
+        $util.toJson($context.result)
       ApiId: !GetAtt 'GraphQLApi.ApiId'
       FieldName: QueryDdbItemCountAll
+
+  ProviderResolver:
+    Condition: EnableAppSync
+    Type: 'AWS::AppSync::Resolver'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TypeName: Query
+      DataSourceName: !GetAtt 'DDBDataSource.Name'
+      RequestMappingTemplate: |
+        #set($filter = {"expression": "#published = :published", "expressionNames": {"#published": "visible"}, "expressionValues": {":published": {"S": "y"}}})
+        #set($limit = $util.defaultIfNull($ctx.args.limit, 100))
+        #if($limit < 1 || $limit > 101)
+          $util.error("limit must be between 1 and 101", "BadRequest")
+        #end
+        {
+          "version": "2018-05-29",
+          "operation": "Query",
+          "index": "provider-timest",
+          "limit": $limit,
+          "scanIndexForward": false,
+          "select": "ALL_PROJECTED_ATTRIBUTES",
+          "query": { "expression": "#provider = :provider AND #timest > :timest", "expressionNames": { "#provider": "provider", "#timest": "timest" }, "expressionValues": { ":provider": $util.dynamodb.toDynamoDBJson($ctx.args.provider), ":timest": $util.dynamodb.toDynamoDBJson($ctx.args.timest) } },
+          "filter": $util.toJson($filter),
+          "nextToken": $util.toJson($util.defaultIfNull($ctx.args.nextToken, null))
+        }
+      ResponseMappingTemplate: |
+        #if($ctx.error)
+          $util.error($ctx.error.message, $ctx.error.type)
+        #end
+        #foreach($item in $ctx.result.items)
+          $util.qr($item.put("description", $util.defaultIfNull($item.preview, "")))
+        #end
+        $util.toJson($ctx.result)
+      ApiId: !GetAtt 'GraphQLApi.ApiId'
+      FieldName: blogsByProvider
 
 # print the url of the state machine and graphql details
 Outputs:
