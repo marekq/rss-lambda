@@ -17,3 +17,13 @@ goog-security, https://security.googleblog.com/feeds/posts/default
 goog-p0, https://googleprojectzero.blogspot.com/feeds/posts/default
 goog-tag, https://blog.google/threat-analysis-group/rss/
 goog-safety, https://blog.google/technology/safety-security/rss/
+goog-bughunters, https://bughunters.google.com/feed/en
+goog-threat-intel, https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v
+goog-cloud, https://cloudblog.withgoogle.com/rss/
+goog-cloud-release-notes, https://cloud.google.com/feeds/gcp-release-notes.xml
+goog-oss, https://feeds.feedburner.com/GoogleOpenSourceBlog
+goog-developers, https://developers.googleblog.com/feeds/posts/default
+goog-research, https://research.google/blog/rss/
+goog-deepmind, https://deepmind.google/blog/rss.xml
+goog-chromium, https://blog.chromium.org/feeds/posts/default
+goog-chrome-developers, https://developer.chrome.com/static/blog/feed.xml
