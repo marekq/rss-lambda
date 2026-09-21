@@ -14,7 +14,7 @@ whats-new, https://aws.amazon.com/new/feed/
 wiz, https://www.wiz.io/feed/rss.xml
 wiz-threats, https://www.wiz.io/api/feed/cloud-threat-landscape/rss.xml
 goog-security, https://security.googleblog.com/feeds/posts/default
-goog-p0, https://googleprojectzero.blogspot.com/feeds/posts/default
+goog-p0, https://projectzero.google/feed.xml
 goog-tag, https://blog.google/threat-analysis-group/rss/
 goog-safety, https://blog.google/technology/safety-security/rss/
 goog-bughunters, https://bughunters.google.com/feed/en
